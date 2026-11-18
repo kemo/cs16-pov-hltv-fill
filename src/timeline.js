@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { FrameType, directoryOf, frames, readHeader } from './goldsrc/frames.js';
 import { DemoState, readBlock, withWeaponBits } from './goldsrc/messages.js';
 import { WorldTracker } from './world.js';
-import { smoothSpikes } from './track.js';
+import { smoothSpikes, withoutUnplaced } from './track.js';
 import { SnapshotClock } from './snapshot-clock.js';
 import { CHAT_TITLES } from './shared/chat.js';
 
@@ -94,10 +94,14 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
   const eyes = [];
   const radar = [];
   const fires = [];
-  const setSide = (entity, side) => {
+  const setSide = (entity, side, since = null) => {
     if (teams.get(entity) === side && teams.has(entity)) return;
     teams.set(entity, side);
-    sides.push([round2(time), entity, side]);
+    const row = [since ?? round2(time), entity, side];
+    // A side that holds since an earlier time goes to its place by time.
+    let at = sides.length;
+    while (at > 0 && sides[at - 1][0] > row[0]) at--;
+    sides.splice(at, 0, row);
   };
   const lastPing = new Map();
   let server = null;
@@ -107,6 +111,9 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
   let lastSample = -1;
   let clock = new SnapshotClock();
   let recorder = null;
+  // The recorder's own place for the time that it watches another player (withOwnOrigin()).
+  const ownPlace = { last: null };
+  const sideless = sidelessSamples();
   let ended = 0;
   // The server's own clock (svc_time) at the first and the last playback frame: it runs on over a restart of the
   // rounds, so the demos of one stay on a server follow each other on it (tools/suggest-joins.js).
@@ -133,6 +140,7 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
         // A userinfo without a name is a disconnect: the slot is empty until the next connect.
         const last = names.findLast((n) => n[1] === entity);
         if (last && last[2] !== null) names.push([round2(time), entity, null]);
+        sideless.drop(entity);
         return;
       }
       const model = info.match(/\\model\\([a-z0-9_]+)/i)?.[1]?.toLowerCase();
@@ -222,6 +230,8 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
       switch (msg) {
         case 'TeamInfo': {
           const team = cstr(data, 1);
+          // A TeamInfo can be a change: it says nothing of the time before it.
+          sideless.drop(data[0]);
           setSide(data[0], team === 'TERRORIST' ? 'T' : team === 'CT' ? 'CT' : null);
           return;
         }
@@ -230,7 +240,12 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
           if (data.length < 9) return;
           if (!teams.has(data[0])) {
             const team = data.readInt16LE(7);
-            if (team === 1 || team === 2) setSide(data[0], team === 1 ? 'T' : 'CT');
+            if (team === 1 || team === 2) {
+              const side = team === 1 ? 'T' : 'CT';
+              // The slot had this side since the recording began: its kept samples go into their rows.
+              const since = sideless.release(data[0], side);
+              setSide(data[0], side, since);
+            }
           }
           board.push([round2(time), data[0], data.readInt16LE(1), data.readInt16LE(3)]);
           return;
@@ -357,15 +372,19 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
     frameTimes?.push([frame.offset, at ?? time]);
     if (at === null || round2(at) <= lastSample) continue;
     lastSample = round2(at);
-    const entities = withOwnOrigin(state, recorder);
+    const entities = withOwnOrigin(state, recorder, ownPlace);
     const row = [round2(at)];
     for (const [entity, e] of entities) {
       if (entity < 1 || entity > state.maxClients) continue;
       const team = teams.get(entity);
-      if (!team || players.get(entity)?.hltv) continue;
+      if (players.get(entity)?.hltv) continue;
       const flags = (attribs.get(entity) ?? 0) & 3;
-      row.push(entity, Math.round(e['origin[0]'] ?? 0), Math.round(e['origin[1]'] ?? 0), Math.round(e['origin[2]'] ?? 0),
-        Math.round((e['angles[1]'] ?? 0) * 10), (team === 'CT' ? 4 : 0) | flags | (viewPitch(e['angles[0]'] ?? 0) + 900) << PITCH_SHIFT | (e.usehull === 1 ? DUCKING : 0));
+      const values = [Math.round(e['origin[0]'] ?? 0), Math.round(e['origin[1]'] ?? 0), Math.round(e['origin[2]'] ?? 0),
+        Math.round((e['angles[1]'] ?? 0) * 10), flags | (viewPitch(e['angles[0]'] ?? 0) + 900) << PITCH_SHIFT | (e.usehull === 1 ? DUCKING : 0)];
+      if (team) row.push(entity, values[0], values[1], values[2], values[3], values[4] | (team === 'CT' ? 4 : 0));
+      // A POV demo only: the slots of an HLTV demo with no side yet are not all players of the match.
+      // No place yet (the baseline before the first full packet) is no sample.
+      else if (!teams.has(entity) && !state.hltv && (values[0] || values[1] || values[2])) sideless.hold(entity, row, values);
     }
     samples.push(row);
     for (const [entity, e] of entities) {
@@ -386,8 +405,11 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
     world.sample(at, entities, state.models, (entity) => {
       if (entity < 1 || entity > state.maxClients) return null;
       const team = teams.get(entity);
-      if (!team || players.get(entity)?.hltv) return { team: null, dead: true };
-      return { team, dead: ((attribs.get(entity) ?? 0) & 1) !== 0 };
+      // A slot of a POV demo with no news of its side is a player whose samples wait (sidelessSamples()): its weapon
+      // counts from now.
+      const waits = !team && !teams.has(entity) && !state.hltv;
+      if ((!team && !waits) || players.get(entity)?.hltv) return { team: null, dead: true };
+      return { team: team ?? null, dead: ((attribs.get(entity) ?? 0) & 1) !== 0 };
     });
     if (!state.hltv) {
       views.push([round2(time), Math.round(frame.view.origin[0]), Math.round(frame.view.origin[1]), Math.round(frame.view.angles[1])]);
@@ -427,7 +449,7 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
     // (1 dead, 2 bomb, 4 CT, 8 ducking, and from bit 4 eleven bits of the view pitch in tenths + 900, down
     // positive). Version 7 and before held the yaw in whole degrees and the pitch in bits 3 to 10 of the
     // flags, with ducking at bit 11; `stateAt()` of src/shared/director.js reads both.
-    samples: smoothSpikes(samples),
+    samples: state.hltv ? smoothSpikes(samples) : withoutUnplaced(smoothSpikes(samples)),
     kills,
     rounds: withoutCallDuplicates(rounds),
     bombs,
@@ -491,15 +513,53 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
 /**
  * The entities with the POV recorder at the origin of its svc_clientdata. The game leaves the local player's origin
  * out of the packet entities (Player_Encode), so there it stays at its baseline. An observer's clientdata holds the
- * origin of the player it watches: then the entities stay as they are.
+ * origin of the player it watches: the recorder then stays at the last place of its own (`own.last`, where it
+ * died), and is not there at all while the demo has shown no such place. Without `own` the entities of an observer
+ * stay as they are.
+ * `own`: {last: [x, y, z] | null}, kept by the caller from frame to frame.
  */
-export function withOwnOrigin(state, recorder) {
-  const own = state.clientdata;
+export function withOwnOrigin(state, recorder, own = null) {
+  const data = state.clientdata;
   const e = recorder === null || state.hltv ? undefined : state.entities.get(recorder);
-  if (!e || (own.iuser1 ?? 0) !== 0 || !Object.keys(own).length) return state.entities;
+  if (!e || !Object.keys(data).length) return state.entities;
+  const watches = (data.iuser1 ?? 0) !== 0;
+  if (watches && !own) return state.entities;
   const entities = new Map(state.entities);
-  entities.set(recorder, { ...e, 'origin[0]': own['origin[0]'] ?? 0, 'origin[1]': own['origin[1]'] ?? 0, 'origin[2]': own['origin[2]'] ?? 0 });
+  if (watches && !own.last) {
+    // A recording that starts while its recorder watches: the demo holds no place of the recorder yet.
+    entities.delete(recorder);
+    return entities;
+  }
+  const origin = watches ? own.last : [data['origin[0]'] ?? 0, data['origin[1]'] ?? 0, data['origin[2]'] ?? 0];
+  if (own && !watches) own.last = origin;
+  entities.set(recorder, { ...e, 'origin[0]': origin[0], 'origin[1]': origin[1], 'origin[2]': origin[2] });
   return entities;
+}
+
+/**
+ * The samples of the slots whose side a demo has not named yet. A recording that starts after its recorder
+ * connected holds no TeamInfo of the players; a ScoreInfo (a kill) names the side that a slot had all the time, since a
+ * change of side sends a TeamInfo. `hold()` keeps a sample with its row, `release()` puts the kept samples of a slot
+ * into their rows with its side and returns the time of the first, `drop()` forgets them (another news of the
+ * slot: a TeamInfo, a disconnect).
+ */
+export function sidelessSamples() {
+  const held = new Map();
+  return {
+    hold(entity, row, values) {
+      if (!held.has(entity)) held.set(entity, []);
+      held.get(entity).push({ row, values });
+    },
+    release(entity, side) {
+      const list = held.get(entity) ?? [];
+      held.delete(entity);
+      for (const { row, values } of list) row.push(entity, values[0], values[1], values[2], values[3], values[4] | (side === 'CT' ? 4 : 0));
+      return list.length ? list[0].row[0] : null;
+    },
+    drop(entity) {
+      held.delete(entity);
+    },
+  };
 }
 
 // FL_DUCKING of the entity flags.

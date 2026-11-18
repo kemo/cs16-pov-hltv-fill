@@ -47,3 +47,16 @@ export function smoothSpikes(samples) {
   }
   return samples;
 }
+
+/**
+ * The samples of a POV demo without the players at 0,0,0: the demo holds a player with no place yet there (the
+ * baseline before its first full packet). Runs after `smoothSpikes()`, which takes the short runs. Changed in place.
+ */
+export function withoutUnplaced(samples) {
+  for (const row of samples) {
+    for (let i = row.length - 6; i >= 1; i -= 6) {
+      if (!row[i + 1] && !row[i + 2] && !row[i + 3]) row.splice(i, 6);
+    }
+  }
+  return samples;
+}

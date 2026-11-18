@@ -186,7 +186,7 @@ export function demo(body, { directory = true } = {}) {
 }
 
 /** A POV match: playback frames each `step` s with the recorder (slot 0) and one enemy on their sides. */
-export function povDemo({ count = 20, step = 0.1, timeAt = (i) => 1 + i * step, serverAt = (i, t) => 99 + t, recorderAt = (i) => [i * 10, 0, 0], iuser1 = () => 0, weapons = [], weaponBits = 6, extra = () => [] } = {}) {
+export function povDemo({ count = 20, step = 0.1, timeAt = (i) => 1 + i * step, serverAt = (i, t) => 99 + t, recorderAt = (i) => [i * 10, 0, 0], iuser1 = () => 0, weapons = [], weaponBits = 6, extra = () => [], enemyAt = () => [500, 500, 0] } = {}) {
   const body = [loading(), marker(5), marker(2)];
   for (let i = 0; i < count; i++) {
     const t = timeAt(i);
@@ -195,7 +195,7 @@ export function povDemo({ count = 20, step = 0.1, timeAt = (i) => 1 + i * step, 
       svcTime(serverAt(i, t)),
       ...(i === 0 ? [teamInfo(1, 'TERRORIST'), teamInfo(2, 'CT')] : []),
       clientData({ 'origin[0]': at[0], 'origin[1]': at[1], 'origin[2]': at[2], iuser1: iuser1(i) }, { weapons, weaponBits }),
-      packetEntities([{ number: 1, yaw: 90 }, { number: 2, origin: [500, 500, 0], yaw: 180 }]),
+      packetEntities([{ number: 1, yaw: 90 }, { number: 2, origin: enemyAt(i), yaw: 180 }]),
       ...extra(i),
     ], { origin: at, sequence: i }));
   }

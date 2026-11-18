@@ -69,8 +69,12 @@ timeline of 7 and before has coarser angles and no punch on its shots (section 3
 **The POV recorder's own row.** The game leaves the local player's origin out of the packet entities
 (`Player_Encode`), so that entity stays at its baseline. The row of the recorder takes the origin of
 `svc_clientdata` instead (`withOwnOrigin()`). An observer (`iuser1` not 0) has the origin of the player that it
-watches in its clientdata: its row stays as it is. The two local POV demos (vs69, vs69-2) are such observers, with
-no side, so they have no row of the recorder.
+watches in its clientdata. A recorder that dies becomes such an observer: its row then keeps the last place of
+its own, where it died, until it lives again. Before this rule the dead recorder stood at a stale place of the
+packets, up to 3500 units away, and a page that followed the recorder jumped there at each death. A recording
+that starts while its recorder watches holds no place of the recorder yet, so it has no row of the recorder until
+the recorder lives. The two local POV demos (vs69, vs69-2) are observers with no side: they have no row of the
+recorder at all.
 
 **Sample flags (version 8):** bit 0 dead, bit 1 bomb carrier, bit 2 CT, bit 3 ducking (`usehull` 1), and from
 bit 4 eleven bits of the view pitch in tenths of a degree + 900 (down positive). Version 7 and before held the
@@ -214,5 +218,17 @@ Code: `src/dead-air.js`, `tools/import-demos.js`, `tools/cut-dead-air.js`. Test:
 ## 6. Sides and names over time
 
 Sides come from TeamInfo; ScoreInfo fills the side of a player whose TeamInfo came before the recording. A
-slot's name comes from userinfo; a userinfo without a name is a disconnect. The scoreboard reads both at the
+POV recording that starts after its recorder connected (each half of a match is such a demo) holds no TeamInfo
+of the players, and the first ScoreInfo of a player comes with a kill: up to a minute and more into the half. The
+builder keeps the samples of such a slot (`sidelessSamples()`) and puts them into their rows when the ScoreInfo
+comes: the slot had that side since the recording began, because a change of side sends a TeamInfo. Its `sides`
+row holds from its first kept sample. A TeamInfo or a disconnect of the slot first drops the kept samples, and a
+sample with no place (the baseline before the first full packet) is not kept. Before this rule the first minute
+of a half had no real player: the fill estimated all ten, the recorder too. An HLTV demo keeps the old rule.
+
+A POV demo holds a player with no place yet at 0,0,0. After the spike filter, which takes the short runs of such
+samples onto the line between their neighbours, the builder removes each sample that is still at 0,0,0
+(`withoutUnplaced()` of `src/track.js`): the player has no sample there, and the fill can estimate it.
+
+A slot's name comes from userinfo; a userinfo without a name is a disconnect. The scoreboard reads both at the
 second shown, so a reconnect or a team switch shows correctly.
