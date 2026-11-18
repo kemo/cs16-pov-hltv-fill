@@ -15,8 +15,8 @@ What it is:
 - a walk graph of the map, built from the same `.bsp`: where a player can walk, drop, jump and climb, and how
   long each way takes;
 - the fill itself: a way for each hidden player between the places that the demo knows;
-- a writer of a filled copy of the demo: the same `.dem` with the estimated players in its packets, which the game
-  plays;
+- a writer of a filled copy of the demo: the same `.dem` with the estimated players in its packets, for the game
+  (not yet tested in the game);
 - a measure: it hides players from an HLTV demo as a POV demo would, fills them, and compares with the truth.
 
 What it is not:
@@ -50,13 +50,15 @@ cs16-pov-hltv-fill fill first-half.dem second-half.dem --maps "/path/to/Half-Lif
 
 That is all for de_dust2, de_inferno, de_nuke, de_train, de_cbble and de_tuscan: their routes ship with the tool.
 
-### A demo that the game plays
+### A filled copy of the demo
 
 ```sh
 # A copy of each half with the estimated players in it: filled/first-half.filled.dem, filled/second-half.filled.dem
 cs16-pov-hltv-fill fill first-half.dem second-half.dem --maps "/path/to/Half-Life/cstrike/maps" --dem filled
 ```
 
+- Nobody has played a copy in the game yet. On real demos, a copy with no estimate is the same as the demo, byte
+  for byte, in every frame but the few full packets. A filled copy decodes to the places of the fill.
 - The copy is the same demo, frame for frame. Only the packet entities change: each player that the fill
   estimated is in every frame where the demo does not hold it. A player that the demo holds keeps its real state.
 - Your demo stays as it is. The tool never writes over a demo.
@@ -159,7 +161,7 @@ A timeline: one JSON object for the demo (`timeline.md` gives every field). The 
 
 `withoutEstimates(timeline)` gives the timeline of the demo alone.
 
-With `--dem`, a copy of each demo comes out too (see "A demo that the game plays").
+With `--dem`, a copy of each demo comes out too (see "A filled copy of the demo").
 
 ## How it works
 
