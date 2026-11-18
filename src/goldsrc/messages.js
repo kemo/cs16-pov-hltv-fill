@@ -86,7 +86,8 @@ export class DemoState {
 
 /**
  * Reads one block and calls `on[name](payload, state)` for the messages that a caller wants.
- * Every message is read, so the next one starts at the right byte.
+ * Every message is read, so the next one starts at the right byte. `on.message(id, start, end, state)` gets the
+ * bytes of each message after it is read (src/dem rewrites a block from them).
  */
 export function readBlock(block, state, on = {}) {
   const r = new Reader(block);
@@ -98,16 +99,14 @@ export function readBlock(block, state, on = {}) {
     state.lastMessages.push(`${SVC_NAMES[id] ?? id}@${start}`);
 
     try {
-      if (id >= 64) {
-        userMessage(r, id, state, on);
-        continue;
-      }
-      readMessage(r, id, state, on);
+      if (id >= 64) userMessage(r, id, state, on);
+      else readMessage(r, id, state, on);
     } catch (e) {
       const desync = e instanceof DemoDesync ? e : new DemoDesync(`${e.message} (message ${SVC_NAMES[id] ?? id} at ${start}; ${state.lastMessages.slice(-6).join(' ')})`);
       desync.hltv = state.hltv;
       throw desync;
     }
+    on.message?.(id, start, r.at, state);
   }
 }
 
@@ -440,6 +439,8 @@ function packetEntities(r, state, on, delta) {
     }
   }
   const next = delta ? new Map(from) : new Map();
+  // The numbers of the custom entities (beams): their state uses custom_entity_state_t.
+  next.customs = new Set(delta ? from.customs : []);
   // The states of this packet in the order they came: the baseline offset of a full packet counts back in it.
   const order = [];
   const br = r.bits();
@@ -462,6 +463,7 @@ function packetEntities(r, state, on, delta) {
 
     if (remove) {
       next.delete(number);
+      next.customs.delete(number);
       continue;
     }
 
@@ -480,6 +482,7 @@ function packetEntities(r, state, on, delta) {
     base ??= state.baselines.get(number);
     const entity = readDelta(br, state.deltas.get(entityTable(state, number, custom)), base ?? null);
     next.set(number, entity);
+    if (custom) next.customs.add(number); else next.customs.delete(number);
     order.push(entity);
   }
   br.end();

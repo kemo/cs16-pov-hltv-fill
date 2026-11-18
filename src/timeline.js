@@ -46,7 +46,10 @@ export function buildTimeline(buf, options = {}) {
   return withWeaponBits((weaponBits) => buildOnce(buf, { ...options, weaponBits }));
 }
 
-function buildOnce(buf, { file = null, weaponBits = 6, builder = null } = {}) {
+// `frameTimes` (an array) gets [frame offset, time] for each network frame: the time of its snapshot on the clock of
+// the samples, or the frame's own time where the snapshot has none (src/dem places the fill's samples by it).
+function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTimes = null } = {}) {
+  if (frameTimes) frameTimes.length = 0;
   const header = readHeader(buf);
   const state = new DemoState(header.netProtocol, { weaponBits });
   const players = new Map();
@@ -346,8 +349,12 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null } = {}) {
     // 100 frames a second) fall on one row, which is as fine as the clock gets. What the frame's state holds
     // (positions, animations, kits, the world) goes at its snapshot's time (src/snapshot-clock.js); its messages
     // stay at the frame's.
-    if (!playback) continue;
+    if (!playback) {
+      frameTimes?.push([frame.offset, time]);
+      continue;
+    }
     const at = clock.at(time, state.time);
+    frameTimes?.push([frame.offset, at ?? time]);
     if (at === null || round2(at) <= lastSample) continue;
     lastSample = round2(at);
     const entities = withOwnOrigin(state, recorder);
