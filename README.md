@@ -15,12 +15,16 @@ What it is:
 - a walk graph of the map, built from the same `.bsp`: where a player can walk, drop, jump and climb, and how
   long each way takes;
 - the fill itself: a way for each hidden player between the places that the demo knows;
+- a writer of a filled copy of the demo: the same `.dem` with the estimated players in its packets, which the game
+  plays;
 - a measure: it hides players from an HLTV demo as a POV demo would, fills them, and compares with the truth.
 
 What it is not:
 
-- It does not write a `.dem` file. The output is a timeline (JSON): every player's place, view, weapon and events
-  over time. The game cannot play it; a viewer must read it.
+- It does not change your demo. The fill gives a timeline (JSON) and, with `--dem`, a copy of each demo with a
+  new name.
+- It does not make an HLTV demo. The copy stays a POV demo: the game shows it from the recorder's eyes, so most
+  added players are behind walls. You see them with a free camera (for example HLAE) or a viewer of the timeline.
 - It does not know what happened. An estimate is a guess that fits everything the demo knows. Each estimated
   sample is marked.
 - It holds no game file and no demo. You bring the `.dem` and the `.bsp`.
@@ -45,6 +49,22 @@ cs16-pov-hltv-fill fill first-half.dem second-half.dem --maps "/path/to/Half-Lif
 ```
 
 That is all for de_dust2, de_inferno, de_nuke, de_train, de_cbble and de_tuscan: their routes ship with the tool.
+
+### A demo that the game plays
+
+```sh
+# A copy of each half with the estimated players in it: filled/first-half.filled.dem, filled/second-half.filled.dem
+cs16-pov-hltv-fill fill first-half.dem second-half.dem --maps "/path/to/Half-Life/cstrike/maps" --dem filled
+```
+
+- The copy is the same demo, frame for frame. Only the packet entities change: each player that the fill
+  estimated is in every frame where the demo does not hold it. A player that the demo holds keeps its real state.
+- Your demo stays as it is. The tool never writes over a demo.
+- At the start of its playback, the copy prints in the console: "This demo holds estimated players
+  (cs16-pov-hltv-fill)". The `.dem` format has no other place to mark an estimate.
+- Each command of the tool refuses a filled copy as its input, so an estimate never becomes a real sample.
+- Do not give a filled copy to a tool that judges players (aim, reaction, cheats): it cannot tell an estimate
+  from a record.
 
 ### Your own maps
 
@@ -107,6 +127,23 @@ for (const row of filled.samples) {
 }
 ```
 
+A filled copy of a demo needs the time of each of its frames, which `buildTimeline()` gives in `frameTimes`:
+
+```js
+import { writeFileSync } from 'node:fs';
+import { writeFilledDemo } from 'cs16-pov-hltv-fill';
+
+const files = ['first-half.dem', 'second-half.dem'];
+const frameTimes = files.map(() => []);
+const halves = files.map((file, i) => buildTimeline(readFileSync(file), { file, frameTimes: frameTimes[i] }));
+// ... join and fill as above ...
+const starts = filled.recorders ? filled.recorders.map(([t]) => t) : [0];   // each half on the joined clock
+files.forEach((file, i) => {
+  const { demo } = writeFilledDemo(readFileSync(file), filled, { frameTimes: frameTimes[i], offset: starts[i] });
+  writeFileSync(file.replace(/\.dem$/, '.filled.dem'), demo);
+});
+```
+
 ## What comes out
 
 A timeline: one JSON object for the demo (`timeline.md` gives every field). The fill adds:
@@ -122,7 +159,7 @@ A timeline: one JSON object for the demo (`timeline.md` gives every field). The 
 
 `withoutEstimates(timeline)` gives the timeline of the demo alone.
 
-The output is not a `.dem` file. A viewer must read the timeline; the game itself cannot play it.
+With `--dem`, a copy of each demo comes out too (see "A demo that the game plays").
 
 ## How it works
 
@@ -202,6 +239,10 @@ We found no other tool that fills a GoldSrc POV demo (search of November 2026). 
 - A jump that the walk graph does not have (over a gap, onto a box) becomes a straight line.
 - A map with no routes needs your own HLTV demos of it, or `--no-routes`.
 - The shipped routes fit one build of each map. Another build of the map (other walls) needs its own routes.
+- A filled copy: the tests and a real match show that it decodes to the right entities. Nobody has played one
+  in the game yet.
+- In a filled copy an estimated player keeps the upper-body frame and the look of the last state that the demo
+  held of it. Its pitch is level, and the game's legs follow its way.
 
 ## Licence
 

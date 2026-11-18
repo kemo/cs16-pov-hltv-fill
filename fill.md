@@ -274,8 +274,11 @@ timeline; that is the player's own step after the fill.
 
 ## 10. Open
 
-- **A real `.dem` file.** The fill gives a timeline, not a demo that the game plays. A writer needs an encoder
-  of the packet entities (delta compression) and of the HLTV messages.
+- **An HLTV `.dem` file.** `src/dem` writes a filled copy of a POV demo (`fill --dem`): the packet entities of each
+  frame again, with the estimated players, a new place for an event that names its entity by its place in the
+  packet, and a notice in the console. The copy stays a POV demo, so the game shows it from the recorder's eyes.
+  A demo with a free camera needs the HLTV messages and the spectator state too. Nobody has played a copy in the
+  game yet.
 - **The health** of a hidden player is not estimated.
 - **A death with no body** (a demo before `ClCorpse` carried the place, a kill far from the recorder): the way
   ends where the guide ends, not where the killer aimed.
