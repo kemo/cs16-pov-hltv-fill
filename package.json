@@ -1,0 +1,34 @@
+{
+  "name": "cs16-pov-hltv-fill",
+  "version": "0.1.0",
+  "description": "Fills a Counter-Strike 1.6 / 1.5 (GoldSrc) POV demo with the players its recorder could not see, so it plays with all ten players like an HLTV demo.",
+  "keywords": [
+    "counter-strike",
+    "cs16",
+    "cstrike",
+    "goldsrc",
+    "half-life",
+    "demo",
+    "hltv",
+    "pov-demo",
+    "demo-parser",
+    "replay"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kemo/cs16-pov-hltv-fill.git"
+  },
+  "homepage": "https://github.com/kemo/cs16-pov-hltv-fill#readme",
+  "type": "module",
+  "main": "tools/cs16-pov-hltv-fill-lib.js",
+  "bin": {
+    "cs16-pov-hltv-fill": "tools/cs16-pov-hltv-fill.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
