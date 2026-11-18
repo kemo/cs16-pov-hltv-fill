@@ -48,8 +48,8 @@ export class DeltaTables {
   }
 }
 
-/** Reads one delta against `from` and returns a new object. */
-export function readDelta(br, table, from = null) {
+/** Reads one delta against `from` and returns a new object. `sent` (an array) gets the names of the fields read. */
+export function readDelta(br, table, from = null, sent = null) {
   const to = from ? { ...from } : {};
   const maskBytes = br.read(3);
   const mask = [];
@@ -76,6 +76,7 @@ export function readDelta(br, table, from = null) {
       throw new Error(`Delta field ${field.name} has unknown type ${field.type}.`);
     }
     to[field.name] = value;
+    sent?.push(field.name);
   }
   return to;
 }

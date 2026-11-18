@@ -28,6 +28,8 @@ const SOLID_SLIDEBOX = 3;
 const KEPT = ['modelindex', 'colormap', 'skin', 'framerate', 'friction', 'gravity', 'frame', 'animtime', 'scale',
   'rendermode', 'renderamt', 'renderfx', 'rendercolor.r', 'rendercolor.g', 'rendercolor.b',
   'controller[0]', 'controller[1]', 'controller[2]', 'controller[3]', 'blending[0]', 'blending[1]'];
+// The fields that an estimated player sends in each frame.
+const ANIMATED = ['animtime'];
 // The text that a filled demo prints in the console at the start of its playback.
 export const NOTICE = 'This demo holds estimated players (cs16-pov-hltv-fill): a player that the recorder could not see is a guess, not a record.\n';
 
@@ -209,16 +211,22 @@ function writeOnce(buf, filled, { frameTimes, offset, weaponBits }) {
           for (const [number, e] of original) if (number >= 1 && number <= st.maxClients) lastSeen.set(number, e);
           const to = new Map(original);
           to.customs = new Set(original.customs);
+          const sent = new Map(original.sent);
           if (frame.type === FrameType.NETWORK) {
             const extra = playersAt(t, original, st, lastSeen);
             if (original.size + extra.size <= MAX_PACKET_ENTITIES) {
-              for (const [number, e] of extra) to.set(number, e);
+              for (const [number, e] of extra) {
+                to.set(number, e);
+                // The server sends a living player's time window in each frame: its animation runs from now.
+                sent.set(number, ANIMATED);
+              }
               added += extra.size;
               if (extra.size) gotPlayers = true;
             }
           }
           const sortedTo = new Map([...to].sort((a, b) => a[0] - b[0]));
           sortedTo.customs = to.customs;
+          sortedTo.sent = sent;
           const from = delta ? (history.get(fromSequence) ?? current) : null;
           edits.push({ start, stop, bytes: writePacketEntities(st, sortedTo, { from, fromSequence }) });
           history.set(st.sequence & 0xff, sortedTo);

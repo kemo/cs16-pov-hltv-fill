@@ -441,6 +441,8 @@ function packetEntities(r, state, on, delta) {
   const next = delta ? new Map(from) : new Map();
   // The numbers of the custom entities (beams): their state uses custom_entity_state_t.
   next.customs = new Set(delta ? from.customs : []);
+  // The fields that this packet sent for each entity in it: a time window is new on each send, even when equal.
+  next.sent = new Map();
   // The states of this packet in the order they came: the baseline offset of a full packet counts back in it.
   const order = [];
   const br = r.bits();
@@ -480,7 +482,9 @@ function packetEntities(r, state, on, delta) {
       base = order[order.length - br.read(6)];
     }
     base ??= state.baselines.get(number);
-    const entity = readDelta(br, state.deltas.get(entityTable(state, number, custom)), base ?? null);
+    const sent = [];
+    const entity = readDelta(br, state.deltas.get(entityTable(state, number, custom)), base ?? null, sent);
+    next.sent.set(number, sent);
     next.set(number, entity);
     if (custom) next.customs.add(number); else next.customs.delete(number);
     order.push(entity);

@@ -9,6 +9,7 @@ import { buildTimeline } from '../src/timeline.js';
 import { ESTIMATE } from '../src/shared/estimates.js';
 import { BitWriter } from '../src/dem/bits.js';
 import { writeDelta } from '../src/dem/delta.js';
+import { writePacketEntities } from '../src/dem/entities.js';
 import { NOTICE, placeAt, writeFilledDemo } from '../src/dem/write.js';
 import { Bits, TABLES, clientData, demo, loading, marker, netFrame, povDemo, svcTime, teamInfo } from './goldsrc-fixture.js';
 
@@ -156,4 +157,30 @@ test('the place of an estimated track takes the line between its samples, and no
   assert.equal(placeAt(track, 1.5), null);
   assert.equal(placeAt(track, 2.01)[1], 100);
   assert.equal(placeAt(track, 0.5), null);
+});
+
+test('a field that the demo sent goes again in the copy, even when its value did not change', () => {
+  // A time window is new on each send: the client sets it from the time of the packet.
+  const state = new DemoState(47);
+  state.maxClients = 4;
+  state.deltas.tables.set('entity_state_player_t', [
+    { name: 'animtime', type: DT.TIMEWINDOW_8, bits: 8, divisor: 1, post: 1 },
+    { name: 'origin[0]', type: DT.FLOAT | DT.SIGNED, bits: 18, divisor: 32, post: 1 },
+  ]);
+  const from = new Map([[1, { animtime: 0, 'origin[0]': 5 }]]);
+  const sentOf = (sent) => {
+    const to = new Map([[1, { animtime: 0, 'origin[0]': 5 }]]);
+    if (sent) to.sent = new Map([[1, sent]]);
+    const back = new DemoState(47);
+    back.maxClients = 4;
+    back.deltas = state.deltas;
+    back.history.set(0, from);
+    back.sequence = 1;
+    let got = null;
+    readBlock(writePacketEntities(state, to, { from, fromSequence: 0 }), back, { entities: (next) => { got = next; } });
+    return got.sent.get(1) ?? null;
+  };
+  assert.deepEqual(sentOf(['animtime']), ['animtime']);
+  // A field that nobody sent and that did not change stays out, and so does the entity.
+  assert.equal(sentOf(null), null);
 });

@@ -10,6 +10,14 @@ function tableOf(state, number, custom) {
   return state.deltas.get(number > 0 && number <= state.maxClients ? 'entity_state_player_t' : 'entity_state_t');
 }
 
+/** The indexes of `changed` and of the fields named in `sent`, in the order of the table. */
+function withSent(table, changed, sent) {
+  const names = new Set(sent);
+  const all = new Set(changed);
+  table.forEach((field, i) => { if (names.has(field.name)) all.add(i); });
+  return [...all].sort((a, b) => a - b);
+}
+
 /**
  * The bytes of one packet entities message that gives the client the entities `to` (a Map of number to state, with
  * `customs`, the numbers of the custom entities). With `from` (the client's entities of the frame `fromSequence`)
@@ -55,8 +63,10 @@ export function writePacketEntities(state, to, { from = null, fromSequence = 0 }
     // An entity that the client has keeps its state as the base; a new one starts from its baseline.
     const old = delta ? from.get(number) : undefined;
     const start = old ?? state.baselines.get(number) ?? null;
-    const changed = changedFields(table, start, next);
-    if (old !== undefined && changed.length === 0) continue;
+    // A field that the demo sent goes again even when its value is equal: a time window is new on each send.
+    const sent = to.sent?.get(number);
+    const changed = sent ? withSent(table, changedFields(table, start, next), sent) : changedFields(table, start, next);
+    if (old !== undefined && changed.length === 0 && !sent) continue;
     header(number, false, custom);
     writeDelta(bw, table, start, next, changed);
   }
