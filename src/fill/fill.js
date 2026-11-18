@@ -12,7 +12,7 @@ import { guidesFor } from './routes.js';
 import { findWay } from './way.js';
 
 export { ESTIMATE };
-export const FILL_VERSION = 4;
+export const FILL_VERSION = 5;
 
 // Seconds between two known places of a player above which the time between them is a span to fill.
 const MIN_GAP = 0.3;
@@ -283,6 +283,31 @@ function context(timeline, level) {
   for (const [t, entity, x, y, z, yaw] of timeline.fires ?? []) hint(entity, { t: t - lag, x, y, z, yaw: ((yaw % 3600) + 3600) % 3600, kind: 'fire' });
   for (const [t, name, entity, x, y, z] of timeline.sounds ?? []) if (stepNames[name] && entity >= 1) hint(entity, { t: t - lag, x, y, z, kind: 'sound' });
   const deaths = byEntity((timeline.kills ?? []).map((k) => [k.t, k.victim]));
+  // A slot plays in a part of the match (a demo of a join: a slot can hold another player in each) when the demo
+  // shows it alive there, names it in a kill or a shot, or holds it on the radar more than once (a living teammate
+  // is there every second or two). A slot with a side and none of these in a whole part is no player: a referee
+  // or a spectator that sits on a side, a slot that its player left.
+  const cuts = (timeline.recorders ?? [[0]]).map(([t]) => t);
+  const partOf = (t) => {
+    let part = 0;
+    for (let i = 1; i < cuts.length; i++) if (cuts[i] <= t) part = i;
+    return part;
+  };
+  const played = new Set();
+  for (const [entity, track] of tracks) {
+    for (let part = 0; part < cuts.length; part++) {
+      const first = track[lowerBound(track, cuts[part])];
+      if (first && first[0] < (cuts[part + 1] ?? Infinity)) played.add(`${part} ${entity}`);
+    }
+  }
+  for (const k of timeline.kills ?? []) for (const entity of [k.killer, k.victim]) if (entity) played.add(`${partOf(k.t)} ${entity}`);
+  for (const [t, entity] of timeline.fires ?? []) played.add(`${partOf(t)} ${entity}`);
+  const onceOnRadar = new Set();
+  for (const [t, entity] of timeline.radar ?? []) {
+    const key = `${partOf(t)} ${entity}`;
+    if (onceOnRadar.has(key)) played.add(key); else onceOnRadar.add(key);
+  }
+  const plays = (entity, t) => played.has(`${partOf(t)} ${entity}`);
   const corpses = byEntity(timeline.corpses);
 
   // The set of the recorder's eye at a time, kept for the last time asked.
@@ -369,7 +394,7 @@ function context(timeline, level) {
     return t1 - last <= 1.2 && last > t0 - 0.5 && track.length > 0;
   };
   const flagsOf = (entity, t) => (sideOf(entity, t) === 'CT' ? 4 : 0) | ((lastRow(attribs.get(entity), t)?.[2] ?? 0) & 2);
-  return { timeline, level, windows, tracks, entities, sideOf, leftAt, onRadar, heardAt, lag, hints, deaths, corpses, seenAt, flagsOf };
+  return { timeline, level, windows, tracks, entities, sideOf, leftAt, plays, onRadar, heardAt, lag, hints, deaths, corpses, seenAt, flagsOf };
 }
 
 /**
@@ -408,10 +433,11 @@ export function lagOf(timeline, tracks, own) {
   return Math.round(best * 100) / 100;
 }
 
-/** The life of a player in a window: {t0, t1, side, fromSpawn, died}; null when it has no side there. */
+/** The life of a player in a window: {t0, t1, side, fromSpawn, died}; null when it has no side there or does not play. */
 function lifeOf(ctx, win, entity) {
   const side = ctx.sideOf(entity, win.t0 + 0.1) ?? ctx.sideOf(entity, win.t1 - 0.1);
   if (side !== 'T' && side !== 'CT') return null;
+  if (!ctx.plays(entity, win.t0 + 0.1)) return null;
   const death = (ctx.deaths.get(entity) ?? []).find((d) => d[0] >= win.t0 && d[0] < win.t1);
   const onStart = ctx.sideOf(entity, win.t0 + 0.1) === side;
   // A player that leaves its side (a spectator, a disconnect) is gone from then.

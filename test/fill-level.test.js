@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { readVis } from '../src/fill/vis.js';
-import { levelFit } from '../tools/lib/fill-level.js';
+import { levelFit, levelMapOf } from '../tools/lib/fill-level.js';
 import { twoRoomBsp } from './fill-world.js';
 
 // The recorder (1) stands at x 0. The demo holds player 2 at x 100 in every row.
@@ -24,4 +27,18 @@ test('a dead player and an estimate do not count for the fit, and a timeline wit
   for (const row of tl.samples) row[12] = 1;
   assert.equal(levelFit(tl, { vis: readVis(twoRoomBsp(50, false)) }), 1);
   assert.equal(levelFit({ ...timeline(), eyes: [] }, { vis: readVis(twoRoomBsp(50, false)) }), 1);
+});
+
+test('a POV demo of a map with no level of its own takes the level of the map with the same walls', () => {
+  const assets = mkdtempSync(join(tmpdir(), 'assets-'));
+  const pov = { map: 'de_clan1_mill', source: { kind: 'pov' } };
+  assert.equal(levelMapOf(pov, assets), 'de_cpl_mill');
+  // An HLTV demo has no eye to judge the fit: it keeps its own map.
+  assert.equal(levelMapOf({ map: 'de_clan1_mill', source: { kind: 'hltv' } }, assets), 'de_clan1_mill');
+  assert.equal(levelMapOf({ map: 'de_dust2', source: { kind: 'pov' } }, assets), 'de_dust2');
+  // Its own level wins when the player has one.
+  mkdirSync(join(assets, 'levels'));
+  writeFileSync(join(assets, 'levels', 'de_clan1_mill.hull.bin'), '');
+  assert.equal(levelMapOf(pov, assets), 'de_clan1_mill');
+  rmSync(assets, { recursive: true });
 });

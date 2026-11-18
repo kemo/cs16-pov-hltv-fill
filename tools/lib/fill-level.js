@@ -85,18 +85,29 @@ export function levelFit(timeline, level) {
   return seen ? inSet / seen : 1;
 }
 
+// A map that the player holds only under another name, with the same walls.
+const SAME_WALLS = { de_clan1_mill: 'de_cpl_mill' };
+
+/** The map whose level serves a timeline: its own, else for a POV demo the map of the same walls (levelFit judges it). */
+export function levelMapOf(timeline, assets = 'assets') {
+  const other = SAME_WALLS[timeline.map];
+  if (!other || timeline.source?.kind !== 'pov' || existsSync(`${assets}/levels/${timeline.map}.hull.bin`)) return timeline.map;
+  return other;
+}
+
 /**
  * {nav, hull, vis, spawns} of a timeline's map; null when a file of the level is missing. A map with two builds
  * (CS 1.5 and CS 1.6) gives the one that fits a POV timeline better; null when neither fits it (FITS).
  */
 export function fillLevelOf(timeline, assets = 'assets') {
+  const map = levelMapOf(timeline, assets);
   const v16 = (timeline.source?.netProtocol ?? 0) >= 47;
-  const both = existsSync(`${assets}/levels16/${timeline.map}.hull.bin`);
-  const first = levelOfSet(timeline.map, v16 && both ? '16' : '', assets);
+  const both = existsSync(`${assets}/levels16/${map}.hull.bin`);
+  const first = levelOfSet(map, v16 && both ? '16' : '', assets);
   if (timeline.source?.kind !== 'pov' || !first) return first;
   const fit = levelFit(timeline, first);
   if (fit >= FITS) return first;
-  const other = both ? levelOfSet(timeline.map, v16 ? '' : '16', assets) : null;
+  const other = both ? levelOfSet(map, v16 ? '' : '16', assets) : null;
   return other && levelFit(timeline, other) >= FITS ? other : null;
 }
 

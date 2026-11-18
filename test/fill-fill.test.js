@@ -74,6 +74,27 @@ test('a player that the demo never shows comes from a spawn of its side to its f
   assert.equal(rowOf(out.samples[40], 3)[4], 900, 'the yaw of the shot');
 });
 
+test('a slot with a side that never plays gets no estimate: a referee, a spectator on a side', () => {
+  // Player 3 has a side and nothing else. One radar row and a sound are no proof of play.
+  const extra = { rounds: [{ t: 0, kind: 'start', seconds: 100 }], radar: [[2, 3, 160, 0, 0]], sounds: [[3, 0, 3, 160, 0, 0]], soundNames: ['player/pl_step1.wav'] };
+  const out = fillTimeline(timeline(walker, extra), level({ spawns: [{ side: 'CT', origin: [0, 0, 0] }, { side: 'T', origin: [288, 64, 0] }] }));
+  assert.ok(out.samples.every((row) => rowOf(row, 3) === null));
+  assert.ok(out.estimates.every((e) => e.entity !== 3));
+  // Player 2 plays: the demo shows it.
+  assert.ok(out.estimates.some((e) => e.entity === 2));
+});
+
+test('a slot plays in each part of a joined match on its own proof', () => {
+  // Two parts of 3 s. Player 3 shoots only in the second: it has no estimate in the first.
+  const extra = {
+    recorders: [[0, 1], [3, 1]], fires: [[5, 3, 160, 0, 0, 900, 0]],
+    rounds: [{ t: 0, kind: 'start', seconds: 100 }, { t: 2.9, kind: 'end', winner: 'CT' }, { t: 3, kind: 'start', seconds: 100 }],
+  };
+  const out = fillTimeline(timeline(walker, extra), level({ spawns: [{ side: 'CT', origin: [0, 0, 0] }, { side: 'T', origin: [288, 64, 0] }] }));
+  assert.equal(rowOf(out.samples[15], 3), null);
+  assert.ok(rowOf(out.samples[55], 3));
+});
+
 test('a dead player gets no estimate after its kill', () => {
   const kills = [{ t: 3, killer: 1, victim: 2 }];
   const out = fillTimeline(timeline((t) => (t <= 1 ? [sample(2, 96 + t * 32, 32)] : []), { kills }), level());

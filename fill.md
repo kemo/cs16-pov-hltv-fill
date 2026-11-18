@@ -62,6 +62,11 @@ agree on 96.8% of the samples.
    seen player leaps (a restart by the admin).
 2. **Lives.** A player lives in a window from its start (on a spawn, when the window is a round) to its death, a
    side change or the window's end.
+   A slot with a side is a player only where the demo proves that it plays: a seen sample, a kill, a shot, or
+   more than one radar row, in that part of the match (each demo of a join is a part, and a slot can hold
+   another player in each). A referee or a spectator that sits on a side, and a slot that its player left, have
+   none of these in a whole half and get no life. Fill version 5 has this rule; 22 of the 219 filled matches
+   held such a slot and are built again, the others keep version 4 with the same samples.
 3. **Known places.** The seen samples, then the hints of section 2 between them. A hint that no run reaches from
    the known place before it is another's and goes. A seen sample that no run joins to the places before it is a
    leap of the game (a respawn before the round's own clock): no way leads into it.
@@ -227,6 +232,10 @@ A map can have two builds with one name (CS 1.5 and CS 1.6). `fillLevelOf()` tak
 of the demo lie in the recorder's set (`levelFit()`, about 0.98 on the right build): the net protocol does not
 say it, a demo of 2003 with protocol 46 was played on the newer de_inferno. With no build over 0.95, and for a
 level with no files, the timeline stays as it is ("no fill" in the log).
+
+A map can also have two names with one set of walls. The player has no files of de_clan1_mill, so a POV demo of
+it takes the level of de_cpl_mill (`levelMapOf()`), and `levelFit()` judges that choice like any other (0.98 to
+0.99 on four matches). Its routes are the routes of de_cpl_mill.
 
 The roster of the index (`src/shared/roster.js`) skips the estimates: the teams, the score and the result of a
 match come from the demo alone. With the estimates, 3 of 58 checked matches had another result or score.
