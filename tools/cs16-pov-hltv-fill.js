@@ -4,7 +4,7 @@
 //                           [--dem <folder>]
 //       The timeline of a POV demo with the players that it hides, estimated. Several demos are the parts of one
 //       match, in their order (one demo for each half): they become one timeline. --dem writes a copy of each demo
-//       with the estimated players in it (<name>.filled.dem), which the game plays; the demos themselves stay.
+//       with the estimated players in it (<name>.filled.dem), for the game (not yet tested in it); the demos stay.
 //   cs16-pov-hltv-fill routes <hltv.dem>... --maps <folder> --out <folder>
 //       The routes of the real players of your own HLTV demos, one file for each map: the fill follows them.
 //   cs16-pov-hltv-fill check <pov.dem> <hltv.dem> --maps <folder>
@@ -19,7 +19,7 @@
 // tool. A map with no routes stops the fill; --no-routes fills it with the plain ways.
 
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { brotliCompressSync } from 'node:zlib';
@@ -128,6 +128,7 @@ if (command === 'fill') {
   console.log(`ways: ${filled.fill.ways}, with a real player's route: ${filled.fill.guided}, faster than a run: ${filled.fill.relaxed}, straight lines: ${filled.fill.straight}`);
   if (opts.out) {
     const json = Buffer.from(JSON.stringify(filled));
+    mkdirSync(dirname(resolve(opts.out)), { recursive: true });
     writeFileSync(opts.out, opts.out.endsWith('.br') ? brotliCompressSync(json) : json);
     console.log(`written: ${opts.out}`);
   }
