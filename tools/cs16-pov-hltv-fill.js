@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // The command line of the fill (tools/cs16-pov-hltv-fill-lib.js).
 //   cs16-pov-hltv-fill fill <pov.dem> [<second half.dem>...] --maps <folder> [--out <timeline.json or .json.br>]
+//                           [--dem <folder>]
 //       The timeline of a POV demo with the players that it hides, estimated. Several demos are the parts of one
-//       match, in their order (one demo for each half): they become one timeline.
+//       match, in their order (one demo for each half): they become one timeline. --dem writes a copy of each demo
+//       with the estimated players in it (<name>.filled.dem), which the game plays; the demos themselves stay.
 //   cs16-pov-hltv-fill routes <hltv.dem>... --maps <folder> --out <folder>
 //       The routes of the real players of your own HLTV demos, one file for each map: the fill follows them.
 //   cs16-pov-hltv-fill check <pov.dem> <hltv.dem> --maps <folder>
@@ -17,18 +19,18 @@
 // tool. A map with no routes stops the fill; --no-routes fills it with the plain ways.
 
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { brotliCompressSync } from 'node:zlib';
 import {
-  ESTIMATE, add, buildTimeline, checkPair, fillLevelFromBsp, fillTimeline, joinTimelines, levelFit, line, measureRun, newStats, packRoutes,
-  readRoutes, recordersOf, report, routesOf, shrinkRoutes,
+  ESTIMATE, NOTICE, add, buildTimeline, checkPair, fillLevelFromBsp, fillTimeline, joinTimelines, levelFit, line, measureRun, newStats, packRoutes,
+  readRoutes, recordersOf, report, routesOf, shrinkRoutes, writeFilledDemo,
 } from './cs16-pov-hltv-fill-lib.js';
 import { findRoutes, listRoutes, routesName } from './lib/fill-routes.js';
 
 const USAGE = `Usage:
-  cs16-pov-hltv-fill fill <pov.dem> [<second half.dem>...] --maps <folder> [--out <timeline.json|.json.br>]
+  cs16-pov-hltv-fill fill <pov.dem> [<second half.dem>...] --maps <folder> [--out <timeline.json|.json.br>] [--dem <folder>]
   cs16-pov-hltv-fill routes <hltv.dem>... --maps <folder> --out <folder>
   cs16-pov-hltv-fill check <pov.dem> <hltv.dem> --maps <folder>
   cs16-pov-hltv-fill measure <hltv.dem>... --maps <folder> [--recorders 2]
@@ -38,12 +40,13 @@ The map:    --maps <folder>  takes <folder>/<map of the demo>.bsp (for example y
             --bsp <file>     names the .bsp itself
 The routes: --routes <file>  one routes file
             --routes-dir <folder>  your own routes (made with "routes"); read before the ones that ship
-            --no-routes      fill a map that has no routes with the plain ways`;
+            --no-routes      fill a map that has no routes with the plain ways
+The demo:   --dem <folder>   a copy of each demo with the estimated players in it, as <name>.filled.dem`;
 const { values: opts, positionals: [command, ...files] } = parseArgs({
   allowPositionals: true,
   options: {
     bsp: { type: 'string' }, maps: { type: 'string' }, routes: { type: 'string' }, 'routes-dir': { type: 'string' },
-    'no-routes': { type: 'boolean' }, out: { type: 'string' }, recorders: { type: 'string', default: '2' },
+    'no-routes': { type: 'boolean' }, out: { type: 'string' }, dem: { type: 'string' }, recorders: { type: 'string', default: '2' },
   },
 });
 const stop = (text) => {
@@ -64,7 +67,12 @@ if (command === 'maps') {
 }
 if (!['fill', 'routes', 'check', 'measure'].includes(command) || !files.length || (!opts.bsp && !opts.maps)) stop(USAGE);
 
-const timelineOf = (file) => buildTimeline(readFileSync(file), { file: basename(file) });
+/** The timeline of a demo. A filled copy (--dem) is refused: its estimates would read as real samples. */
+const timelineOf = (file, frameTimes = null) => {
+  const demo = readFileSync(file);
+  if (demo.includes(NOTICE, 0, 'latin1')) stop(`${file} is a filled copy of a demo: its hidden players are estimates. Use the original demo.`);
+  return buildTimeline(demo, { file: basename(file), frameTimes });
+};
 
 /** The bytes of the .bsp of a map: --bsp, or the file of that name in --maps (in any case of letters). */
 function bspOf(map) {
@@ -103,7 +111,8 @@ Or fill without routes (--no-routes): right in what the demo knows, simple in wh
 
 if (command === 'fill') {
   // Several demos are the parts of one match (one demo for each half), in their order.
-  const parts = files.map(timelineOf);
+  const frameTimes = files.map(() => []);
+  const parts = files.map((file, i) => timelineOf(file, frameTimes[i]));
   if (parts.some((tl) => tl.source.kind !== 'pov')) stop(`${files[parts.findIndex((tl) => tl.source.kind !== 'pov')]} is an HLTV demo: it hides nobody.`);
   const timeline = parts.length > 1 ? joinTimelines(parts) : parts[0];
   const filled = fillTimeline(timeline, levelOf(timeline));
@@ -121,6 +130,20 @@ if (command === 'fill') {
     const json = Buffer.from(JSON.stringify(filled));
     writeFileSync(opts.out, opts.out.endsWith('.br') ? brotliCompressSync(json) : json);
     console.log(`written: ${opts.out}`);
+  }
+  if (opts.dem) {
+    // Each part keeps its own clock: it starts at its recorder's row of the joined timeline.
+    const starts = timeline.recorders ? timeline.recorders.map(([t]) => t) : [0];
+    const outs = files.map((file) => resolve(opts.dem, `${basename(file).replace(/\.dem$/i, '')}.filled.dem`));
+    const clash = outs.find((out) => files.some((file) => resolve(file) === out));
+    if (clash) stop(`${clash} is one of the demos: the fill never writes over a demo. Give --dem another folder.`);
+    mkdirSync(opts.dem, { recursive: true });
+    files.forEach((file, i) => {
+      const { demo, frames, added } = writeFilledDemo(readFileSync(file), filled, { frameTimes: frameTimes[i], offset: starts[i] });
+      writeFileSync(outs[i], demo);
+      console.log(`written: ${outs[i]} (${added} estimated player states in ${frames} frames)`);
+    });
+    console.log(`The console of the game prints at the start of each copy: ${NOTICE.trim()}`);
   }
 } else if (command === 'routes') {
   if (!opts.out) stop('routes needs --out <folder>.');

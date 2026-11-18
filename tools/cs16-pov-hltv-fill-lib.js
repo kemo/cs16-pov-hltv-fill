@@ -15,6 +15,7 @@ export { fillLevelFromBsp, levelFit, levelIdOf } from './lib/fill-level.js';
 export { add, line, measureRun, newStats, recordersOf, report } from './lib/fill-measure.js';
 export { findRoutes, listRoutes, routesName } from './lib/fill-routes.js';
 export { checkPair } from './lib/fill-pair.js';
+export { NOTICE, writeFilledDemo } from '../src/dem/write.js';
 
 /**
  * The filled timeline of a POV demo. `demo` and `bsp` are the bytes of the .dem file and of its map; `routes` is
