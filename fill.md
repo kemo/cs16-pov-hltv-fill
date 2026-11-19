@@ -111,9 +111,9 @@ nothing stands between its two known places, the way is the straight line.
 
 ## 6. The routes of real players (`routes.js`)
 
-`tools/build-fill-corpus.js` reads every HLTV timeline of `out/` and writes, for each level, the route of each
-life of each player: its place and yaw twice a second, on the clock of its round. The file stays in `.cache`: a
-route is another person's match.
+`cs16-pov-hltv-fill routes` reads HLTV demos and writes, for each level, the route of each life of each player:
+its place and yaw twice a second, on the clock of its round. The shipped files in `routes/` hold no name and no
+match: a source is a number.
 
 A span of 2.5 s or more takes guides from the routes: real players of the same side that fit the known ends.
 
