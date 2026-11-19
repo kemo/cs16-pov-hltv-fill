@@ -8,7 +8,7 @@ import { smoothSpikes, withoutUnplaced } from './track.js';
 import { SnapshotClock } from './snapshot-clock.js';
 import { CHAT_TITLES } from './shared/chat.js';
 
-export const TIMELINE_VERSION = 8;
+export const TIMELINE_VERSION = 9;
 // One ping per player at most this often.
 const PING_SECONDS = 5;
 // A step of the frame clock past this is a damaged time unless the next playback frame confirms it. The 11 local
@@ -71,6 +71,8 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
   const soundIds = new Map();
   const sounds = [];
   const shots = [];
+  // The recorder's own shots from the demo's event frames (withOwnShots()).
+  const ownShots = [];
   const radio = [];
   const effects = [];
   const corpses = [];
@@ -194,7 +196,7 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
       // TE_PLAYERDECAL: the player, position, entity, decal. A spray logo; its picture is not in a demo.
       else if (type === 112) sprays.push([round2(time), d[0], Math.round(d.readInt16LE(1) / 8), Math.round(d.readInt16LE(3) / 8), Math.round(d.readInt16LE(5) / 8)]);
     },
-    event(ev, st) {
+    event(ev, st, local = false) {
       const script = st.eventScripts.get(ev.index);
       if (script === 'events/createsmoke.sc') {
         const a = ev.args;
@@ -213,12 +215,12 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
       // y right), fparam1 and fparam2 its own spread along the right and the up of that aim (FireBullets3
       // returns them): kept in hundredths too, as the event's own float carries two decimals.
       const hundredths = (v) => Math.round(v ?? 0);
-      if (!st.hltv && ev.entity <= st.maxClients && !st.entities.has(ev.entity) && a['origin[0]'] !== undefined) {
+      if (!local && !st.hltv && ev.entity <= st.maxClients && !st.entities.has(ev.entity) && a['origin[0]'] !== undefined) {
         fires.push([round2(time + (ev.delay ?? 0)), ev.entity, Math.round(a['origin[0]']), Math.round(a['origin[1]'] ?? 0), Math.round(a['origin[2]'] ?? 0),
           Math.round((a['angles[1]'] ?? 0) * 10), Math.round((a['angles[0]'] ?? 0) * 10)]);
       }
       const wild = Math.abs(hundredths(a.iparam1)) > PUNCH_LIMIT || Math.abs(hundredths(a.iparam2)) > PUNCH_LIMIT;
-      shots.push([round2(time + (ev.delay ?? 0)), ev.entity, weapon, a.bparam1 ? 1 : 0,
+      (local ? ownShots : shots).push([round2(time + (ev.delay ?? 0)), ev.entity, weapon, a.bparam1 ? 1 : 0,
         wild ? null : hundredths(a.iparam1), wild ? null : hundredths(a.iparam2),
         Math.round((a.fparam1 ?? 0) * 100), Math.round((a.fparam2 ?? 0) * 100)]);
     },
@@ -337,6 +339,7 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
   const walkEnd = {};
   for (const frame of frames(buf, header, walkEnd)) {
     if (frame.type === FrameType.SECTION_START && sawPlayback) newSegment = true;
+    if (frame.event && sawPlayback && !state.hltv) on.event(frame.event, state, true);
     if (!frame.view) continue;
     // The loading section (type 0) runs on its own clock; only playback frames move the time.
     playback = frame.type === FrameType.NETWORK;
@@ -497,7 +500,7 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
     // pistol), punch x, punch y (hundredths of a degree, null where the event carries none), spread x, spread y
     // (hundredths, along the right and the up of the aim). A shot's delay can put it before the one of the
     // frame before.
-    shots: withPunchKept(shots.sort((a, b) => a[0] - b[0])),
+    shots: withPunchKept(withOwnShots(shots, ownShots).sort((a, b) => a[0] - b[0])),
     // A POV demo only, for src/fill. eyes: [t, x, y, z], the point of the recorder's set (serverEye()), at each
     // change. radar: [t, entity, x, y, z] of a teammate. fires: [t, entity, x, y, z, yaw, pitch (tenths)] of a
     // shot by a player outside the packet.
@@ -633,6 +636,16 @@ export function maskSecrets(text) {
 export function viewPitch(angle) {
   const wrapped = ((angle + 180) % 360 + 360) % 360 - 180;
   return Math.max(-890, Math.min(890, Math.round(-wrapped * 30))) || 0;
+}
+
+/**
+ * The shots with the recorder's own ones added. The server sends no event of a shot to its own player (the client
+ * plays it), so these come from the demo's event frames; a player whose shots the packets already hold (no client
+ * weapons, cl_lw 0) keeps only those.
+ */
+export function withOwnShots(shots, own) {
+  const sent = new Set(shots.map((row) => row[1]));
+  return [...shots, ...own.filter((row) => !sent.has(row[1]))];
 }
 
 /**

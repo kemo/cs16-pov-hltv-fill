@@ -103,9 +103,31 @@ function* walk(buf, limit) {
         throw new Error(`Unknown frame type ${type} at byte ${start}.`);
     }
     if (at + skip > limit) return;
-    yield { type, time, frame, offset: start, next: at + skip, data: type === FrameType.CONSOLE ? buf.subarray(at, at + 64) : null };
+    yield {
+      type, time, frame, offset: start, next: at + skip,
+      data: type === FrameType.CONSOLE ? buf.subarray(at, at + 64) : null,
+      ...(type === FrameType.EVENT ? { event: readEvent(buf, at) } : {}),
+    };
     at += skip;
   }
+}
+
+// The fields of event_args_t after flags and entindex, in file order: 4 bytes each.
+const EVENT_FIELDS = ['origin[0]', 'origin[1]', 'origin[2]', 'angles[0]', 'angles[1]', 'angles[2]',
+  'velocity[0]', 'velocity[1]', 'velocity[2]', 'ducking', 'fparam1', 'fparam2', 'iparam1', 'iparam2', 'bparam1', 'bparam2'];
+const EVENT_INTS = new Set(['ducking', 'iparam1', 'iparam2', 'bparam1', 'bparam2']);
+
+/**
+ * An event that the recorder's client played itself (its own predicted shots): the server does not send these to
+ * their player, so a POV demo holds them only here. Same shape as a network event of src/goldsrc/messages.js.
+ */
+function readEvent(buf, at) {
+  const args = { flags: buf.readInt32LE(at + 12), entindex: buf.readInt32LE(at + 16) };
+  EVENT_FIELDS.forEach((name, i) => {
+    const o = at + 20 + i * 4;
+    args[name] = EVENT_INTS.has(name) ? buf.readInt32LE(o) : buf.readFloatLE(o);
+  });
+  return { index: buf.readInt32LE(at + 4), delay: buf.readFloatLE(at + 8), entity: args.entindex || null, args };
 }
 
 /** The recorder's own view from the fixed demo info: origin, angles and slot. */
