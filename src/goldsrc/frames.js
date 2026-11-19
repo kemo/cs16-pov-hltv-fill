@@ -1,5 +1,5 @@
 // Walks the frames of a GoldSrc demo (demo protocol 5) in file order.
-// The directory at the end is not used: an unfinished recording has none (see gamers/src/Demo/DemoFile.php).
+// The directory at the end is not used: an unfinished recording has none.
 
 const HEADER_BYTES = 544;
 // Demo info (436) and the seven netchan sequence numbers (28) before a network block.

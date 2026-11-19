@@ -5,7 +5,6 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { readHulls } from '../../src/shared/game/hull.js';
 import { readNav } from '../../src/shared/game/nav.js';
-import { readRoutes } from '../../src/fill/routes.js';
 import { fatPvs, leafAt, playerSeen, readVis } from '../../src/fill/vis.js';
 import { ESTIMATE } from '../../src/shared/estimates.js';
 import { playData } from '../build-hulls.js';
@@ -14,19 +13,6 @@ import { readBsp } from './bsp.js';
 import { writeNav } from '../../src/shared/game/nav.js';
 
 const levels = new Map();
-
-/** A match under all its ids: "13-nip-vs-4k-de-aztec-2" is the second demo of "13-nip-vs-4k-de-aztec". */
-export const matchOf = (id) => id.replace(/-\d+$/, '');
-
-/**
- * The routes of a level (tools/build-fill-corpus.js); null when none were built. `without`: the id of a timeline
- * under measure. Its match stays out, so the measure never reads its own answer.
- */
-export function fillRoutesOf(level, dir = '.cache/fill/corpus', without = null) {
-  const file = `${dir}/${level.key}.routes.bin`;
-  if (!existsSync(file)) return null;
-  return readRoutes(readFileSync(file), without ? (id) => matchOf(id) === matchOf(without) : null);
-}
 
 /** {nav, hull, vis, spawns} of one build of a map ('' the CS 1.5 files, '16' the CS 1.6 ones); null when a file is missing. */
 function levelOfSet(map, set, assets) {
