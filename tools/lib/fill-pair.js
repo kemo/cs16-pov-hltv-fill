@@ -6,7 +6,8 @@ import { maskAsPov } from '../../src/fill/mask.js';
 
 /**
  * Prints (through `log`) how well the mask of the measure agrees with the real POV timeline, and the error of the
- * fill of the real POV timeline against the HLTV timeline. `level` as fillTimeline() takes it.
+ * fill of the real POV timeline against the HLTV timeline. `level` as fillTimeline() takes it. Returns the raw
+ * errors (units, one each 0.25 s) so that a caller can join many pairs.
  */
 export function checkPair(pov, hltv, level, log = console.log) {
   if (pov.source.kind !== 'pov' || hltv.source.kind !== 'hltv') throw new Error('The first demo must be a POV demo and the second an HLTV demo.');
@@ -155,4 +156,5 @@ export function checkPair(pov, hltv, level, log = console.log) {
     log(`fill of the mask, ${who}: error median ${q(0.5)}, p75 ${q(0.75)}, p90 ${q(0.9)} units`);
   }
   log(`fill: ${JSON.stringify(filled.fill)}; of the mask: ${JSON.stringify(filledMask.fill)}`);
+  return { agree, hidden, errors, maskErrors, detail };
 }

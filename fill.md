@@ -204,6 +204,22 @@ moment.
 hide a player. The fill of a real POV demo is as good as the fill of its mask, so the measure on masked HLTV
 demos is a fair copy of real POV demos.
 
+On 2026-11-19 (fill version 5) the check ran on 31 matches of one player's archive that also exist as an HLTV
+demo: 63 runs of a POV part against an HLTV part with at least 60% of the POV kills in both, the HLTV match out
+of the routes (`--without`: 38 of 41 such HLTV matches are in our routes). The mask and the real demo agree on
+94.2% of the samples.
+
+| | Hidden time | Estimated | Median | p75 | p90 | Within 150 | Within 400 | The mask: median, p90 |
+|-|-------------|-----------|--------|-----|-----|------------|------------|------------------------|
+| Teammates | 20.5 h | 98.9% | 22 | 45 | 91 | 93.7% | 97.0% | 18, 96 |
+| Enemies | 60.5 h | 98.5% | 110 | 306 | 655 | 57.5% | 81.3% | 102, 657 |
+
+The enemies' median by map: de_nuke 62, de_clan1_mill 86, de_dust2 96, de_inferno 104, de_aztec 133, de_cpl_mill
+146, de_train 166, de_tuscan 174, de_prodigy 354 (few routes). Two kinds of span hold 73% of the enemies' error
+(error times time) while the recorder lives: from a spawn to the first known place, over 8 s (34% of the
+estimated time, median 202, 44% of the error), and a hint at one end, over 8 s (22%, median 196, 29%). A span
+that ends with no known place after it (the round ends first) is short in time but far off (median 575 to 866).
+
 **The audit of an import.** `tools/audit-fill.js` on the 325 filled matches of one player's archive (2003 to
 2011, online play): 176 million estimated steps hold 32 jumps of the
 place (4 at most in one match). In a wall: 1.3% of the estimates in the middle match and 8.6% at most, against
