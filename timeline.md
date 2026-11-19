@@ -8,7 +8,7 @@ Code: `src/timeline.js`, `src/world.js`, `tools/build.js`, `tools/split-timeline
 
 `tools/build.js demos/*.dem` turns each demo into `out/<name>.json`, the only input of the player. A 21-minute
 HLTV demo builds in under a second into about 3 MB of JSON (0.75 MB gzipped on the wire). The format has a
-version (`TIMELINE_VERSION`, now 8); a change of a field raises it. The page reads the older versions too: a
+version (`TIMELINE_VERSION`, now 9); a change of a field raises it. The page reads the older versions too: a
 timeline of 7 and before has coarser angles and no punch on its shots (section 3).
 
 ## 2. Clock
@@ -62,7 +62,7 @@ timeline of 7 and before has coarser angles and no punch on its shots (section 3
 | `skins` | `[t, entity, model name]` | `\model\` of userinfo |
 | `anims` | `[t, entity, sequence, gaitsequence]` | entity state |
 | `soundNames`, `sounds` | names; `[t, name index, entity, x, y, z, volume, attenuation x 100]` | `svc_sound` |
-| `shots` | `[t, entity, weapon, bparam1, punch x, punch y, spread x, spread y]` (version 8) | `svc_event` of `events/<weapon>.sc` |
+| `shots` | `[t, entity, weapon, bparam1, punch x, punch y, spread x, spread y]` (version 8) | `svc_event` of `events/<weapon>.sc`; a POV recorder's own: event frames (type 6) |
 | `radio` | `[t, sender, code]` such as `%!MRAD_BOMBPL` | SendAudio |
 | `effects` | `[t, kind, x, y, z, sprite, a, b]` | `svc_temp_entity`, `createsmoke` events |
 
@@ -118,6 +118,10 @@ is the shot's own draw along the right and the up of that aim (`FireBullets3`), 
 `null` where the weapon's event carries none: the AWP and the shotguns pass zeros, the FAMAS and the Galil a
 sentinel, and a weapon writing a plausible punch on fewer than a fifth of its shots keeps none at all
 (`withPunchKept()`). Shots the demo lost come back on the page, not in the file (`src/shared/shots.js`).
+The server sends no event of a shot to its own player, because the client plays it. So a POV demo holds the
+recorder's shots only in its event frames (frame type 6), at the time of the frame before (`withOwnShots()`).
+Version 8 and before have no shots of the recorder. A recorder whose shots the packets already hold (no client
+weapons, `cl_lw 0`) keeps only those.
 
 **Effects kinds:** `explosion` (a scale, b frame rate; TE_EXPLOSION), `smoke` (scale, frame rate; TE_SMOKE),
 `sprite` (scale, brightness; TE_SPRITE), `sparks` (TE_SPARKS: a grenade's own sparks, not a bullet's: 96 to
