@@ -12,7 +12,7 @@ import { guidesFor } from './routes.js';
 import { findWay } from './way.js';
 
 export { ESTIMATE };
-export const FILL_VERSION = 5;
+export const FILL_VERSION = 6;
 
 // Seconds between two known places of a player above which the time between them is a span to fill.
 const MIN_GAP = 0.3;
@@ -39,6 +39,12 @@ const GUIDE_FAR = 800;
 const GUIDE_LOOK = 250;
 // The cost of a second under which a way follows its guide well enough: about 80 units beside it.
 const GOOD_COST = 0.8;
+// The real players that fit the ends of a span, and how many of them (the most typical first) get a way.
+const CANDIDATES = 12;
+const TRIED = 3;
+// The points of a guide that typical() compares, and the units from which two guides are just "apart".
+const SAMPLES = 9;
+const APART = 1000;
 // How much faster than a run a way may be, tried in this order, before the straight line.
 const SPEEDS = [1, 1.3, 2];
 // Units a second: the fastest that an estimated player goes where its time allows (a run is 250).
@@ -535,7 +541,8 @@ function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, unti
     const heading = wayAt(before, a);
     const headingB = wayAt(b, after);
     win.used ??= new Set();
-    guides = guidesFor(routes, { side: side === 'CT' ? 1 : 0, a: end(a), b: end(b), until: clock(t1), heading, headingB, laterB: laters?.map(end), used: win.used, rounds: (win.teams ??= { T: new Set(), CT: new Set() })[side], seed: entity * 131 + Math.round(win.t0) });
+    guides = guidesFor(routes, { side: side === 'CT' ? 1 : 0, a: end(a), b: end(b), until: clock(t1), heading, headingB, laterB: laters?.map(end), used: win.used, rounds: (win.teams ??= { T: new Set(), CT: new Set() })[side], seed: entity * 131 + Math.round(win.t0), limit: a || b ? CANDIDATES : TRIED });
+    guides = typical(guides, clock(t0), clock(t1)).slice(0, TRIED);
   }
   const at = [0, 0, 0];
   const costOf = (guide) => (node, t) => {
@@ -582,6 +589,21 @@ function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, unti
   }
   turn(points);
   return { points, kind: open ?? (a.kind === 'seen' && b.kind === 'seen' ? 'between' : 'hint'), speed, straight: false, seen: way.seen, guided: Boolean(guide) };
+}
+
+/**
+ * The guides in the order of how typical each is: the one that lies nearest to the others first. Among the real
+ * players that fit the ends of a span, the true way is more often like most of them than like the best fit.
+ */
+export function typical(guides, from, to) {
+  if (guides.length <= 2) return guides;
+  const at = [0, 0, 0];
+  const paths = guides.map((g) => Array.from({ length: SAMPLES }, (_, k) => {
+    g.at(from + ((to - from) * k) / (SAMPLES - 1), at);
+    return [at[0], at[1]];
+  }));
+  const far = paths.map((p) => paths.reduce((sum, q) => sum + Math.min(APART, p.reduce((d, point, k) => d + Math.hypot(point[0] - q[k][0], point[1] - q[k][1]), 0) / SAMPLES), 0));
+  return guides.map((g, i) => [g, far[i]]).sort((x, y) => x[1] - y[1]).map(([g]) => g);
 }
 
 /** The floor of a known place: a player in a jump or on a box is some cells from one. */

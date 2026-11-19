@@ -16,6 +16,22 @@ export function tracksOf(timeline) {
   return tracks;
 }
 
+// Seconds between a clock and the scoreboard row of a player that lives again with it.
+const REVIVED = 0.3;
+// Seconds by which a clock may differ from the running one and still be the same clock.
+const GOES_ON = 2.5;
+
+/** The times at which a dead player lives again (ScoreAttrib goes to every client): the game does that only at a restart. */
+function revivals(timeline) {
+  const dead = new Set();
+  const out = [];
+  for (const [t, entity, flags] of timeline.attribs ?? []) {
+    if (flags & 1) dead.add(entity);
+    else if (dead.delete(entity) && out.at(-1) !== t) out.push(t);
+  }
+  return out;
+}
+
 /** The first index of a track ([t, ...] rows) at or after t. */
 export function lowerBound(track, t) {
   let lo = 0;
@@ -47,10 +63,24 @@ export function windowsOf(timeline, tracks = tracksOf(timeline)) {
     }
     return false;
   };
+  const revived = revivals(timeline);
+  const revivedAt = (t) => revived.some((at) => Math.abs(at - t) <= REVIVED);
   let lastStart = null;
+  // The clock before this one, whatever it was: a clock that the recorder's HUD asked for goes on from it.
+  let clock = null;
   for (const r of timeline.rounds ?? []) {
     if (r.kind !== 'start') continue;
+    const goesOn = clock !== null && Math.abs(Math.max(0, clock.seconds - (r.t - clock.t)) - r.seconds) <= GOES_ON;
+    clock = r;
     if (lastStart && r.t - lastStart.t < 1 && r.seconds === lastStart.seconds) continue;
+    // A dead player lives again with a clock that starts anew: a restart, also with no round end and no seen leap
+    // (the admin starts the round again while the recorder is dead). A recorder that joins late lives again too,
+    // but its clock goes on.
+    if (lastStart && !goesOn && revivedAt(r.t)) {
+      starts.push(r.t);
+      lastStart = r;
+      continue;
+    }
     if (lastStart && r.seconds > lastStart.seconds && r.t - lastStart.t < lastStart.seconds + 3 && !live.has(lastStart.t)) {
       live.set(lastStart.t, r.t);
       continue;

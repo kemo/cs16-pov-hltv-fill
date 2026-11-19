@@ -5,8 +5,9 @@
 //       The timeline of a POV demo with the players that it hides, estimated. Several demos are the parts of one
 //       match, in their order (one demo for each half): they become one timeline. --dem writes a copy of each demo
 //       with the estimated players in it (<name>.filled.dem), for the game (not yet tested in it); the demos stay.
-//   cs16-pov-hltv-fill routes <hltv.dem>... --maps <folder> --out <folder>
-//       The routes of the real players of your own HLTV demos, one file for each map: the fill follows them.
+//   cs16-pov-hltv-fill routes <demo.dem>... --maps <folder> --out <folder>
+//       The routes of the real players of your own demos, one file for each map: the fill follows them. An HLTV
+//       demo gives every player; a POV demo gives its recorder and the teammates on its radar.
 //   cs16-pov-hltv-fill check <pov.dem> <hltv.dem> --maps <folder>
 //       The error of the fill on a match that you have as a POV demo and as an HLTV demo.
 //   cs16-pov-hltv-fill measure <hltv.dem>... --maps <folder> [--recorders 2]
@@ -31,7 +32,7 @@ import { findRoutes, listRoutes, routesName } from './lib/fill-routes.js';
 
 const USAGE = `Usage:
   cs16-pov-hltv-fill fill <pov.dem> [<second half.dem>...] --maps <folder> [--out <timeline.json|.json.br>] [--dem <folder>]
-  cs16-pov-hltv-fill routes <hltv.dem>... --maps <folder> --out <folder>
+  cs16-pov-hltv-fill routes <demo.dem>... --maps <folder> --out <folder>
   cs16-pov-hltv-fill check <pov.dem> <hltv.dem> --maps <folder>
   cs16-pov-hltv-fill measure <hltv.dem>... --maps <folder> [--recorders 2]
   cs16-pov-hltv-fill maps
@@ -103,8 +104,9 @@ Use the ${timeline.map}.bsp of the game version that the demo was played on (CS 
   const others = listRoutes(routeDirs).filter((r) => r.map === timeline.map);
   stop(`No routes for ${timeline.map} (level ${level.id}).
 ${others.length ? `There are routes for another build of ${timeline.map} (level ${others.map((r) => r.id).join(', ')}): your .bsp has other walls.\n` : ''}Routes are the ways of real players on a map. With them a hidden enemy follows a way that a real player took.
-Make your own from HLTV demos of ${timeline.map} (the more the better, 10 and up):
-  cs16-pov-hltv-fill routes <hltv demos of ${timeline.map}> --maps ${opts.maps ?? '<folder>'} --out my-routes
+Make your own from demos of ${timeline.map}: HLTV demos (10 and up), or POV demos of other matches (some 40 halves
+give most of the gain; a POV demo holds its recorder and the recorder's teammates):
+  cs16-pov-hltv-fill routes <demos of ${timeline.map}> --maps ${opts.maps ?? '<folder>'} --out my-routes
   cs16-pov-hltv-fill fill ${basename(files[0])} --maps ${opts.maps ?? '<folder>'} --routes-dir my-routes
 Or fill without routes (--no-routes): right in what the demo knows, simple in what it does not.`);
 }
@@ -152,14 +154,10 @@ if (command === 'fill') {
   const maps = new Map();
   for (const file of files) {
     const timeline = timelineOf(file);
-    if (timeline.source.kind !== 'hltv') {
-      console.log(`${file}: a POV demo, left out (routes come from HLTV demos: they hold every player)`);
-      continue;
-    }
     if (!maps.has(timeline.map)) maps.set(timeline.map, { sources: [], lists: [] });
     maps.get(timeline.map).sources.push(basename(file));
     maps.get(timeline.map).lists.push(routesOf(timeline));
-    console.log(`${file}: ${timeline.map}, ${maps.get(timeline.map).lists.at(-1).length} routes`);
+    console.log(`${file}: ${timeline.map}, ${maps.get(timeline.map).lists.at(-1).length} routes${timeline.source.kind === 'pov' ? ' (a POV demo: its recorder and the teammates on its radar)' : ''}`);
   }
   mkdirSync(opts.out, { recursive: true });
   for (const [map, { sources, lists }] of maps) {

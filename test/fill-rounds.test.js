@@ -31,3 +31,17 @@ test('without the second clock a round goes live when the first seen player leav
   const tl = { samples: rows((t) => [Math.max(0, t - 8) * 100, 0]), duration: 60, rounds: [start(5, 120)] };
   assert.equal(windowsOf(tl)[1].goAt, 8.3);
 });
+
+test('a clock that starts anew while a dead player lives again is a restart, with no round end and no seen leap', () => {
+  // The admin starts the round again at 30 s. The only seen player stands still; player 2 was dead and lives again.
+  const rounds = [start(5, 6), start(11, 120), start(30, 6), start(36, 120)];
+  const tl = { ...still, rounds, attribs: [[20, 2, 1], [30, 2, 0]] };
+  assert.deepEqual(windowsOf(tl).map((w) => [w.t0, w.goAt]), [[0, 0], [5, 11], [30, 36]]);
+  // With no player that lives again, the clock stays inside the round.
+  assert.deepEqual(windowsOf({ ...still, rounds }).map((w) => w.t0), [0, 5]);
+});
+
+test('a recorder that joins late lives again, but its clock goes on: no restart', () => {
+  const tl = { ...still, rounds: [start(5, 6), start(11, 120), start(21, 110), end(40), start(45, 6)], attribs: [[4, 1, 1], [21, 1, 0]] };
+  assert.deepEqual(windowsOf(tl).map((w) => w.t0), [0, 5, 45]);
+});

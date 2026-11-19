@@ -83,17 +83,23 @@ map files.
 ### Routes: the ways of real players
 
 A hidden enemy that the demo knows little of follows a real player: one that was at the same place at the same
-second of a round. These ways come from HLTV demos of the map and are called routes.
+second of a round. These ways come from other demos of the map and are called routes.
 
 - **Shipped:** routes for the maps above, from public HLTV demos (14 to 152 demos a map). They hold places and
   view directions only, no name and no match. `cs16-pov-hltv-fill maps` lists them.
 - **A map with no routes:** the fill stops and tells you. You then have two choices.
-- **Make your own, for any map**, from your own HLTV demos of it (10 and more give good ways):
+- **Make your own, for any map**, from your own demos of it:
 
   ```sh
-  cs16-pov-hltv-fill routes hltv1.dem hltv2.dem hltv3.dem --maps "/path/to/cstrike/maps" --out my-routes
+  cs16-pov-hltv-fill routes demo1.dem demo2.dem demo3.dem --maps "/path/to/cstrike/maps" --out my-routes
   cs16-pov-hltv-fill fill match.dem --maps "/path/to/cstrike/maps" --routes-dir my-routes
   ```
+
+  An HLTV demo gives the way of every player (10 demos and more give good ways). A POV demo gives the way of its
+  recorder and, from the radar, of the recorder's teammates. So a folder of POV demos of other matches makes
+  routes too: on de_dust2, routes from 80 POV demos alone gave about 70% of the gain of the routes from 152 HLTV
+  demos (9 of 10 estimates of an enemy lie nearer than: 601 units with no routes, 494 with the POV routes, 452 with the
+  HLTV routes).
 
   The demos can be of several maps: each map gets one file. A file's name holds the map and an id of the level's
   shape, so the fill finds the right file by the `.bsp`. Your folder is read before the shipped routes.
@@ -239,7 +245,7 @@ We found no other tool that fills a GoldSrc POV demo (search of November 2026). 
 - GoldSrc only: Counter-Strike 1.3 to 1.6, net protocols 45 to 48.
 - A hidden player's health is not estimated.
 - A jump that the walk graph does not have (over a gap, onto a box) becomes a straight line.
-- A map with no routes needs your own HLTV demos of it, or `--no-routes`.
+- A map with no routes needs your own demos of it (HLTV, or POV of other matches), or `--no-routes`.
 - The shipped routes fit one build of each map. Another build of the map (other walls) needs its own routes.
 - A filled copy: the tests and a real match show that it decodes to the right entities. Nobody has played one
   in the game yet.

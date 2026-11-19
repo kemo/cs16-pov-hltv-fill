@@ -208,3 +208,14 @@ test('a hint inside the recorder set opens the set for its spans: the way does n
     assert.ok(p && p[1] >= 32 && p[1] <= 96, `at ${k / 10} s the player is at x ${p?.[1]}: between the two radar rows`);
   }
 });
+
+test('the most typical guide comes first: the one nearest to the others', async () => {
+  const { typical } = await import('../src/fill/fill.js');
+  // Three real players go along y = 0, 40 and 80; the best fit of the ends (first in the list) goes far round.
+  const line = (y) => ({ at: (seconds, to) => Object.assign(to, [seconds * 100, y, 0]) });
+  const round = { at: (seconds, to) => Object.assign(to, [seconds * 100, 2000, 0]) };
+  const [a, b, c] = [line(0), line(40), line(80)];
+  assert.deepEqual(typical([round, a, b, c], 0, 10), [b, a, c, round]);
+  // Two guides have no middle: their order stays.
+  assert.deepEqual(typical([round, a], 0, 10), [round, a]);
+});

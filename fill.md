@@ -58,8 +58,10 @@ agree on 96.8% of the samples.
 ## 4. The fill (`fill.js`)
 
 1. **Windows** (`rounds.js`). A round is a window from its restart to the next one. A POV demo gets the round's
-   clock again when its recorder's HUD starts again, so a clock is a restart only after a round end, or where a
-   seen player leaps (a restart by the admin).
+   clock again when its recorder's HUD starts again, so a clock is a restart only after a round end, where a
+   seen player leaps, or where a dead player lives again while the clock starts anew (a restart by the admin:
+   ScoreAttrib goes to every client, and the game gives a dead player its life back only at a restart; the clock
+   of a recorder that joins late goes on from the running one).
 2. **Lives.** A player lives in a window from its start (on a spawn, when the window is a round) to its death, a
    side change or the window's end.
    A slot with a side is a player only where the demo proves that it plays: a seen sample, a kill, a shot, or
@@ -111,9 +113,15 @@ nothing stands between its two known places, the way is the straight line.
 
 ## 6. The routes of real players (`routes.js`)
 
-`cs16-pov-hltv-fill routes` reads HLTV demos and writes, for each level, the route of each life of each player:
-its place and yaw twice a second, on the clock of its round. The shipped files in `routes/` hold no name and no
-match: a source is a number.
+`cs16-pov-hltv-fill routes` reads demos and writes, for each level, the route of each life of a player: its
+place and yaw twice a second, on the clock of its round. The shipped files in `routes/` come from HLTV demos
+and hold no name and no match: a source is a number.
+
+- An HLTV timeline gives every player.
+- A POV timeline gives the players whose whole way it holds (`knownLives()`): its recorder, and each teammate
+  while the recorder lives (the radar of section 2: between two rows the teammate goes the straight way, with no
+  row it stands, and it looks where it goes). An enemy has no whole way in a POV demo. The timeline is read
+  without its estimates. A map with no HLTV demo gets its routes this way (de_dust: 964 routes from 17 matches).
 
 A span of 2.5 s or more takes guides from the routes: real players of the same side that fit the known ends.
 
@@ -127,7 +135,10 @@ A span of 2.5 s or more takes guides from the routes: real players of the same s
   where one is free (the players with a known place get their ways first), only in a round with a kill. In a
   pause the player stays on its spawn.
 
-Each guide gives a way (section 5); the cheapest stays. Near its guide the player looks where the real player
+A span with a known end asks for 12 such real players and takes the most typical ones first: the guide that
+lies nearest to the others (`typical()`, the mean distance at 9 moments of the span, at most 1000 units a pair).
+The best fit of the ends is one person's choice of that round; most players that fit the ends went another way.
+The first 3 of that order give a way each (section 5); the cheapest stays. Near its guide the player looks where the real player
 looked. Two hidden players of a round never follow the same route or take the same spawn. A teammate of a living
 recorder with no radar row did not move: its span takes no guide.
 
@@ -220,6 +231,40 @@ The enemies' median by map: de_nuke 62, de_clan1_mill 86, de_dust2 96, de_infern
 estimated time, median 202, 44% of the error), and a hint at one end, over 8 s (22%, median 196, 29%). A span
 that ends with no known place after it (the round ends first) is short in time but far off (median 575 to 866).
 
+**Version 6 (2026-11-19).** Three changes, each measured on the 24 HLTV demos (two recorders each) and then all
+on the 63 runs of real pairs above:
+
+- A restart by the admin while the recorder is dead (section 4, the windows).
+- A span takes the most typical of 12 guides (section 6). With the perfect choice among 12 guides the enemies'
+  median would be 52 units against 96 on 8 demos: the choice of the guide is where most of the error is.
+- Routes from POV timelines (section 6): no gain on the maps with many HLTV routes, 2 to 3% on the weak ones, and
+  the first routes of de_dust. On de_dust2 with no HLTV routes at all, the routes of 80 POV timelines give about
+  70% of the gain of the routes of 152 HLTV timelines (enemies' p90: 601 with no routes, 494, 452).
+
+| Enemies | Median | p75 | p90 | Within 150 | Within 400 |
+|---------|--------|-----|-----|------------|------------|
+| 24 HLTV demos, masked: version 5 | 99 | 276 | 551 | 59.8% | 84.1% |
+| 24 HLTV demos, masked: version 6 | 93 | 240 | 487 | 62.8% | 86.6% |
+| 63 runs of real pairs: version 5 | 110 | 306 | 655 | 57.5% | 81.3% |
+| 63 runs of real pairs: version 6 | 99 | 271 | 602 | 60.2% | 83.3% |
+
+The teammates and the faults that need no truth stay as they were (teammates on the real pairs: median 22, p90
+91 to 90). The fill takes 11% longer. The enemies' median by map on the real pairs: de_nuke 57, de_clan1_mill
+83, de_dust2 96, de_inferno 97, de_aztec 126, de_cpl_mill 129, de_tuscan 151, de_train 156, de_prodigy 329.
+
+Tried and dropped, with the measure of each:
+
+- A player that nothing shows again stays, or goes on for longer, by its side: staying lowers the median and
+  going on lowers the p90, and no setting wins on both (the rule of 5 s stays).
+- The sightings of the same player in the other rounds of the demo, at the same time of the round: the nearest
+  of them is 500 to 700 units from the truth, the estimate 174. A demo sees an enemy where its recorder looks.
+- The victim of a kill by the hidden player (the way must see the body): 190 of 4,265 long spans hold such a
+  kill, and the choice of the guide does not get better.
+- A guide of the same real round as the guides of the teammates: the best guide has no more such teammates than
+  the others (0.12 against 0.11).
+- The scoreboard as the name of the defuser: a step of 3 frags lies at 4 of 52 defuses.
+- Among whole rounds for a player with nothing known, the routes that last the whole span first: no change.
+
 **The audit of an import.** `tools/audit-fill.js` on the 325 filled matches of one player's archive (2003 to
 2011, online play): 176 million estimated steps hold 32 jumps of the
 place (4 at most in one match). In a wall: 1.3% of the estimates in the middle match and 8.6% at most, against
@@ -256,7 +301,9 @@ it takes the level of de_cpl_mill (`levelMapOf()`), and `levelFit()` judges that
 The roster of the index (`src/shared/roster.js`) skips the estimates: the teams, the score and the result of a
 match come from the demo alone. With the estimates, 3 of 58 checked matches had another result or score.
 
-A change of the fill needs `--rebuild` of the POV demos.
+A change of the fill needs `--rebuild` of the POV demos. The routes are built before an import
+(`tools/build-fill-corpus.js --also <folders of POV timelines that are not live> --hltv-to .cache/fill/corpus-hltv`):
+a new POV match adds its own routes only with the next build.
 
 ## 9. The library
 
@@ -269,6 +316,8 @@ A change of the fill needs `--rebuild` of the POV demos.
   of a level: a hash of its planes, nodes, clip nodes, leaves and models.
 - `tools/cs16-pov-hltv-fill.js` is the command line: `fill` (one demo, or the parts of a match in their order),
   `routes`, `check`, `measure`, `maps`. `--maps <folder>` takes the `.bsp` of the demo's map from a folder.
+- `routes` takes HLTV demos and POV demos (section 6). The routes that ship come from the HLTV timelines only
+  (`.cache/fill/corpus-hltv`): a POV demo is one person's archive.
 - **Routes on disk** (`tools/lib/fill-routes.js`): one file for each build of a map, `<map>.<level id>.routes`, in
   the small form of `shrinkRoutes()` (places on a grid of 4 units, yaws of 8 degrees, each value as its step from
   the point before in one byte, Brotli: a fifth of the size, the same result in the measure and on the real

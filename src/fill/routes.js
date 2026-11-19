@@ -1,6 +1,8 @@
-// The routes of real players, from HLTV timelines of a level: where each player of each round was, twice a second,
-// on the clock of its round. A hidden player of a POV demo follows the route of a real player that was at the same
-// place at the same time of a round (src/fill/fill.js): the level's usual ways and their timing come from here.
+// The routes of real players, from the timelines of a level: where each player of each round was, twice a second,
+// on the clock of its round. An HLTV timeline holds every player; a POV timeline holds its recorder and, by the
+// radar, the recorder's teammates. A hidden player of a POV demo follows the route of a real player that was at
+// the same place at the same time of a round (src/fill/fill.js): the level's usual ways and their timing come
+// from here.
 
 import { brotliCompressSync, brotliDecompressSync, constants } from 'node:zlib';
 import { lowerBound, tracksOf, windowsOf } from './rounds.js';
@@ -28,8 +30,12 @@ const EVERY = 1;
 /**
  * The routes of one timeline: [{side: 0 T | 1 CT, round, k0, points: [[x, y, z, yaw in tenths]]}], one for each
  * life of a player. `round` counts the rounds of the timeline: the routes of one round are one team's plan.
+ * An HLTV timeline gives every player. A POV timeline gives the players whose whole way it holds (knownLives()):
+ * take it without estimates.
  */
 export function routesOf(timeline) {
+  const pov = timeline.source?.kind === 'pov';
+  if (pov && timeline.fill) throw new Error('The routes of a POV timeline come from its own samples: take it without the estimates.');
   const tracks = tracksOf(timeline);
   const sides = new Map();
   for (const [t, entity, side] of timeline.sides ?? []) {
@@ -49,7 +55,8 @@ export function routesOf(timeline) {
   for (const win of windowsOf(timeline, tracks)) {
     if (!win.round) continue;
     round++;
-    for (const [entity, track] of tracks) {
+    const lives = pov ? knownLives(timeline, tracks, win, sideAt) : [...tracks].map(([entity, track]) => ({ entity, track, until: win.t1 }));
+    for (const { entity, track, until } of lives) {
       const side = sideAt(entity, win.t0 + 0.1);
       if (side !== 'T' && side !== 'CT') continue;
       const k0 = Math.ceil((win.t0 + 0.3 - win.goAt) / TICK);
@@ -57,7 +64,7 @@ export function routesOf(timeline) {
       let i = lowerBound(track, win.t0 + 0.1);
       for (let k = k0; k * TICK <= MAX_SECONDS; k++) {
         const t = win.goAt + k * TICK;
-        if (t >= win.t1) break;
+        if (t >= Math.min(win.t1, until)) break;
         while (i + 1 < track.length && track[i + 1][0] <= t) i++;
         const at = track[i];
         // The route ends where the player is gone: dead, or out of the demo.
@@ -66,6 +73,60 @@ export function routesOf(timeline) {
       }
       if (points.length >= 4) out.push({ side: side === 'CT' ? 1 : 0, round, k0, points });
     }
+  }
+  return out;
+}
+
+// Seconds between two radar rows of a teammate that moves (the game sends one each second), with some slack.
+const RADAR_STEP = 1.6;
+// Seconds between the rows of the track that knownLives() makes of a teammate.
+const RADAR_TRACK = 0.25;
+// Seconds after a round goes live by which a teammate must have a known place.
+const RADAR_FROM = 3;
+
+/**
+ * The players of a round of a POV timeline whose whole way the demo holds, [{entity, track, until}]: the recorder,
+ * and each teammate until it or the recorder dies. A living recorder gets the place of each teammate that moves
+ * once a second (the radar, spec 14 section 2): between two rows the teammate goes the straight way, and with no
+ * row it stands. An enemy has no whole way in a POV demo.
+ */
+function knownLives(timeline, tracks, win, sideAt) {
+  const recorder = (timeline.recorders ?? [[0, timeline.recorder]]).findLast((r) => r[0] <= win.t0 + 0.2)?.[1] ?? timeline.recorder;
+  const side = sideAt(recorder, win.t0 + 0.1);
+  if (side !== 'T' && side !== 'CT') return [];
+  const deathOf = (entity) => (timeline.kills ?? []).find((k) => k.victim === entity && k.t >= win.t0 && k.t < win.t1)?.t ?? win.t1;
+  const out = [{ entity: recorder, track: tracks.get(recorder) ?? [], until: win.t1 }];
+  const mates = new Map();
+  for (const [t, entity, x, y, z] of timeline.radar ?? []) {
+    if (t <= win.t0 + 0.1 || t >= win.t1 || entity === recorder || sideAt(entity, win.t0 + 0.1) !== side) continue;
+    if (!mates.has(entity)) mates.set(entity, []);
+    mates.get(entity).push([t, x, y, z, null]);
+  }
+  const recorderDeath = deathOf(recorder);
+  for (const [entity, rows] of mates) {
+    const until = Math.min(recorderDeath, deathOf(entity));
+    const seen = tracks.get(entity) ?? [];
+    const known = rows.filter((row) => row[0] < until);
+    for (let i = lowerBound(seen, win.t0 + 0.1); i < seen.length && seen[i][0] < until; i++) known.push(seen[i]);
+    known.sort((a, b) => a[0] - b[0]);
+    if (known.length < 4 || known[0][0] > win.goAt + RADAR_FROM) continue;
+    const track = [];
+    let i = 0;
+    let yaw = 0;
+    // Before its first known place the teammate stands there: a round starts in the freeze, on a spawn.
+    for (let t = win.t0 + 0.1; t < until; t += RADAR_TRACK) {
+      while (i + 1 < known.length && known[i + 1][0] <= t) i++;
+      const [a, b] = [known[i], known[i + 1]];
+      let [x, y, z] = [a[1], a[2], a[3]];
+      if (a[0] <= t && b && b[0] - a[0] <= RADAR_STEP) {
+        const f = (t - a[0]) / (b[0] - a[0]);
+        [x, y, z] = [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f];
+        // The radar has no yaw: the teammate looks where it goes.
+        if (Math.hypot(b[1] - a[1], b[2] - a[2]) > 8) yaw = (Math.round((Math.atan2(b[2] - a[2], b[1] - a[1]) * 1800) / Math.PI) + 3600) % 3600;
+      }
+      track.push([t, x, y, z, a[4] ?? yaw]);
+    }
+    out.push({ entity, track, until });
   }
   return out;
 }

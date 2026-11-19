@@ -86,3 +86,51 @@ test('the small form of a routes file gives the same routes on a grid of 4 units
   // With the names kept, the measure can still leave a match out.
   assert.deepEqual(readRoutes(shrinkRoutes(raw, { names: true, quality: 5 })).sources, ['match one', 'match two']);
 });
+
+/**
+ * A POV timeline of one round of 20 s. The recorder 1 (T) runs along x. Its teammate 2 is on the radar once a
+ * second, along y from 500. The enemy 3 (CT) is seen for 3 s only.
+ */
+function pov() {
+  const samples = [];
+  const radar = [];
+  for (let k = 0; k <= 200; k++) {
+    const t = k / 10;
+    const run = Math.max(0, t - 2) * 100;
+    const row = [t, 1, run, 0, 0, 450, 0];
+    if (t >= 10 && t < 13) row.push(3, 3000, run, 0, 0, 4);
+    samples.push(row);
+    if (k % 10 === 0) radar.push([t, 2, 500, run, 0]);
+  }
+  return {
+    version: 9, source: { kind: 'pov' }, recorder: 1, duration: 20, samples, radar, kills: [],
+    sides: [[0, 1, 'T'], [0, 2, 'T'], [0, 3, 'CT']],
+    rounds: [{ t: 0, kind: 'start', seconds: 2 }, { t: 2, kind: 'start', seconds: 120 }],
+  };
+}
+
+test('a POV timeline gives the routes of its recorder and of the teammates on its radar, and none of an enemy', () => {
+  const list = routesOf(pov());
+  assert.equal(list.length, 2);
+  assert.ok(list.every((r) => r.side === 0));
+  const [own, mate] = list;
+  assert.deepEqual(own.points[3 + 4], [200, 0, 0, 450], 'the recorder, 2 s after the round went live');
+  // Between two radar rows the teammate goes the straight way, and it looks where it goes (along y: 90 degrees).
+  const [x, y, , yaw] = mate.points[3 + 5];
+  assert.deepEqual([x, yaw], [500, 900]);
+  assert.ok(Math.abs(y - 250) <= 25, `2.5 s after the round went live, at ${y}`);
+});
+
+test('the route of a teammate ends when the recorder dies: the radar stops', () => {
+  const tl = pov();
+  tl.kills = [{ t: 12, killer: 3, victim: 1 }];
+  tl.samples = tl.samples.map((row) => (row[0] >= 12 ? [row[0], 1, row[2], 0, 0, 450, 1, ...row.slice(7)] : row));
+  const [own, mate] = routesOf(tl);
+  // Twice a second from 0.5 s: the teammate to under 12 s, the recorder with its last living sample.
+  assert.equal(mate.points.length, 23);
+  assert.equal(own.points.length, 24);
+});
+
+test('a filled POV timeline gives no routes: an estimate is no real way', () => {
+  assert.throws(() => routesOf({ ...pov(), fill: { version: 5 } }), /without the estimates/);
+});
