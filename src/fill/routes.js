@@ -13,6 +13,12 @@ export const TICK = 0.5;
 const MAX_SECONDS = 150;
 // Seconds that a player with no later known place goes on along its guide.
 const GO_ON = 5;
+// The yaw field (lookAt()): units of a cell and of a floor, units between two points of a player that stands, and
+// the points from which a cell has a yaw.
+const LOOK_CELL = 96;
+const LOOK_FLOOR = 128;
+const LOOK_STANDS = 12;
+const LOOK_FROM = 6;
 // Units of one cell of the index.
 const CELL_BITS = 7;
 const OFFSET = 8192;
@@ -284,6 +290,38 @@ function expandRoutes(bytes) {
     first += count;
   }
   return out;
+}
+
+/**
+ * Where the real players of a side look while they stand at a place: the yaw in tenths of a degree, or null where
+ * fewer than LOOK_FROM points of standing players lie in the cell of the place. `side`: 0 T, 1 CT.
+ */
+export function lookAt(routes, side, x, y, z) {
+  routes.look ??= lookOf(routes);
+  return routes.look[side].get(lookKey(x, y, z)) ?? null;
+}
+
+const lookKey = (x, y, z) => ((Math.round(x / LOOK_CELL) + 512) * 1024 + Math.round(y / LOOK_CELL) + 512) * 256 + Math.round(z / LOOK_FLOOR) + 128;
+
+/** The yaw of each cell of each side: the mean direction of the points at which a real player stands. */
+function lookOf(routes) {
+  const sums = [new Map(), new Map()];
+  for (let r = 0; r < routes.n; r++) {
+    if (routes.out?.[r]) continue;
+    for (let i = 1; i < routes.count[r]; i++) {
+      const [a, b] = [(routes.start[r] + i - 1) * 3, (routes.start[r] + i) * 3];
+      if (Math.hypot(routes.points[b] - routes.points[a], routes.points[b + 1] - routes.points[a + 1]) > LOOK_STANDS) continue;
+      const key = lookKey(routes.points[b], routes.points[b + 1], routes.points[b + 2]);
+      const cells = sums[routes.side[r]];
+      if (!cells.has(key)) cells.set(key, [0, 0, 0]);
+      const sum = cells.get(key);
+      const yaw = (routes.yaws[routes.start[r] + i] * Math.PI) / 1800;
+      sum[0] += Math.cos(yaw);
+      sum[1] += Math.sin(yaw);
+      sum[2]++;
+    }
+  }
+  return sums.map((cells) => new Map([...cells].filter(([, sum]) => sum[2] >= LOOK_FROM).map(([key, sum]) => [key, (Math.round((Math.atan2(sum[1], sum[0]) * 1800) / Math.PI) + 3600) % 3600])));
 }
 
 /**

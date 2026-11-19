@@ -142,6 +142,11 @@ The first 3 of that order give a way each (section 5); the cheapest stays. Near 
 looked. Two hidden players of a round never follow the same route or take the same spawn. A teammate of a living
 recorder with no radar row did not move: its span takes no guide.
 
+**Where a hidden player looks.** Along its way it looks where it goes, and near its guide where the real player
+looked. A player that stands looks where the real players of its side look at that place (`lookAt()`: the mean
+direction of the standing points of the routes in a cell of 96 units, from 6 points up). A known end keeps the
+yaw that the demo holds.
+
 A level with no routes still fills: the hidden players take the shortest ways between their known places.
 
 ## 7. The measure
@@ -252,6 +257,22 @@ The teammates and the faults that need no truth stay as they were (teammates on 
 91 to 90). The fill takes 11% longer. The enemies' median by map on the real pairs: de_nuke 57, de_clan1_mill
 83, de_dust2 96, de_inferno 97, de_aztec 126, de_cpl_mill 129, de_tuscan 151, de_train 156, de_prodigy 329.
 
+**The yaw** (8 HLTV demos, two recorders each; degrees between the estimate and the truth; a random yaw gives a
+median of 90 and 17% within 30 degrees):
+
+| | Median | p75 | p90 | Within 30 degrees |
+|-|--------|-----|-----|-------------------|
+| Enemies, before `lookAt()` | 28 | 72 | 124 | 52% |
+| Enemies | 27 | 66 | 117 | 53% |
+| Teammates, before `lookAt()` | 43 | 89 | 138 | 41% |
+| Teammates | 29 | 67 | 114 | 51% |
+| Teammates that stand, before `lookAt()` | 58 | 109 | 157 | 33% |
+| Teammates that stand | 20 | 54 | 111 | 62% |
+
+A moving enemy that looked along its true way would have a median of 27: the yaw of a moving estimate is at
+that limit. A standing enemy at its true place would have 16 with `lookAt()`; its estimate has 30, because the
+place is off. `tools/measure-fill.js` prints the yaw of each run since then.
+
 Tried and dropped, with the measure of each:
 
 - A player that nothing shows again stays, or goes on for longer, by its side: staying lowers the median and
@@ -279,7 +300,7 @@ for a seen place (section 5). The masked measure holds that fault, with the exac
 
 The gate for "passes as real" is the fault table: an estimate must not be too fast, leap or stand in a wall
 more often than the real samples of a demo do, and must not leap where it meets a real sample. Version 3 passes
-those lines on the masked demos. The gate counts places: nobody measured the yaw, the pitch or the legs. The last line has no real value to compare with (a real player is never in the set and not sent);
+those lines on the masked demos. The gate counts places: nobody measured the pitch or the legs (the yaw: see version 6). The last line has no real value to compare with (a real player is never in the set and not sent);
 0.5% is under the 1.6% by which the model of the set itself misses the real demo. The error against the truth
 is the target of the work on the fill, not a gate.
 

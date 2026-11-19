@@ -44,7 +44,7 @@ export function recordersOf(tl, n) {
 }
 
 export function newStats() {
-  const who = () => ({ hidden: 0, filled: 0, err: [], hold: [] });
+  const who = () => ({ hidden: 0, filled: 0, err: [], hold: [], yaw: [] });
   return { kinds: {}, mate: who(), enemy: who(), steps: 0, fast: 0, jumps: 0, wall: 0, inSet: 0, checked: 0, seams: 0, leaps: 0, ms: 0, ways: 0, relaxed: 0, straight: 0, realSteps: 0, realFast: 0, realJumps: 0, realPlaces: 0, realWall: 0, places: 0 };
 }
 
@@ -54,6 +54,7 @@ export function add(sum, s) {
     sum[who].filled += s[who].filled;
     sum[who].err.push(...s[who].err);
     sum[who].hold.push(...s[who].hold);
+    sum[who].yaw.push(...s[who].yaw);
   }
   for (const [kind, list] of Object.entries(s.kinds)) (sum.kinds[kind] ??= []).push(...list);
   for (const key of ['steps', 'fast', 'jumps', 'wall', 'inSet', 'checked', 'seams', 'leaps', 'ms', 'ways', 'relaxed', 'straight', 'realSteps', 'realFast', 'realJumps', 'realPlaces', 'realWall', 'places']) sum[key] += s[key];
@@ -142,6 +143,9 @@ function compare(truth, masked, filled, recorder, level) {
       who.filled++;
       const error = Math.round(Math.hypot(got[g + 1] - row[i + 1], got[g + 2] - row[i + 2], got[g + 3] - row[i + 3]));
       who.err.push(error);
+      // Degrees between where the estimate looks and where the player looks.
+      const turn = Math.abs(got[g + 4] - row[i + 4]) % 3600;
+      who.yaw.push(Math.round((turn > 1800 ? 3600 - turn : turn) / 10));
       if (who === s.enemy) (s.kinds[kindAt(e, t)] ??= []).push(error);
       const held = lastSeen.get(e);
       if (held) who.hold.push(Math.round(Math.hypot(held[0] - row[i + 1], held[1] - row[i + 2], held[2] - row[i + 3])));
@@ -197,11 +201,13 @@ export function report(s) {
   for (const who of ['mate', 'enemy']) {
     const err = s[who].err.slice().sort((a, b) => a - b);
     const hold = s[who].hold.slice().sort((a, b) => a - b);
+    const yaw = (s[who].yaw ?? []).slice().sort((a, b) => a - b);
     out[who] = {
       hiddenSeconds: Math.round(s[who].hidden * SAMPLE), filledShare: share(s[who].filled, s[who].hidden),
       median: quantile(err, 0.5), p75: quantile(err, 0.75), p90: quantile(err, 0.9),
       within150: share(err.filter((v) => v <= 150).length, err.length), within400: share(err.filter((v) => v <= 400).length, err.length),
       holdMedian: quantile(hold, 0.5), holdP90: quantile(hold, 0.9),
+      yawMedian: quantile(yaw, 0.5), yawP90: quantile(yaw, 0.9), yawWithin30: share(yaw.filter((v) => v <= 30).length, yaw.length),
     };
   }
   out.kinds = Object.fromEntries(Object.entries(s.kinds).sort().map(([kind, list]) => {
@@ -224,6 +230,6 @@ function share(a, b, digits = 3) {
 
 export function line(s) {
   const r = report(s);
-  const who = (w) => `${w} ${r[w].hiddenSeconds} s hidden, median ${r[w].median} p90 ${r[w].p90} (hold ${r[w].holdMedian}/${r[w].holdP90}), in 150: ${r[w].within150}`;
+  const who = (w) => `${w} ${r[w].hiddenSeconds} s hidden, median ${r[w].median} p90 ${r[w].p90} (hold ${r[w].holdMedian}/${r[w].holdP90}), in 150: ${r[w].within150}, yaw ${r[w].yawMedian}/${r[w].yawP90} deg`;
   return `${who('mate')}; ${who('enemy')}; faults: fast ${r.faults.fastShare} (real ${r.faults.realFastShare}), jumps ${r.faults.jumps} (${r.faults.jumpShare}, real ${r.faults.realJumpShare}), wall ${r.faults.wallShare} (real ${r.faults.realWallShare}), in set ${r.faults.inSet} (${r.faults.inSetShare}), leaps ${r.faults.leaps}/${r.faults.seams}, relaxed ${r.faults.relaxed}/${r.faults.ways}, straight ${r.faults.straight}`;
 }

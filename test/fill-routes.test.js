@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TICK, guidesFor, packRoutes, placeOf, pointsNear, readRoutes, routesOf } from '../src/fill/routes.js';
+import { TICK, guidesFor, lookAt, packRoutes, placeOf, pointsNear, readRoutes, routesOf } from '../src/fill/routes.js';
 
 /** An HLTV timeline of one round of 20 s: player 1 (T) runs along x from 0, player 2 (CT) along y from 1000. */
 function hltv() {
@@ -133,4 +133,15 @@ test('the route of a teammate ends when the recorder dies: the radar stops', () 
 
 test('a filled POV timeline gives no routes: an estimate is no real way', () => {
   assert.throws(() => routesOf({ ...pov(), fill: { version: 5 } }), /without the estimates/);
+});
+
+test('a place where real players stand has the yaw that they look along; a place they only pass has none', () => {
+  // In the freeze of two rounds the T player stands at 0, 0 and looks along 45 degrees.
+  const r = routes();
+  assert.equal(lookAt(r, 0, 0, 0, 0), 450);
+  assert.equal(lookAt(r, 0, 10, -20, 0), 450, 'the same cell');
+  // It runs through 800, 0 and never stands there; the CT player never stands at 0, 0.
+  assert.equal(lookAt(r, 0, 800, 0, 0), null);
+  assert.equal(lookAt(r, 1, 0, 0, 0), null);
+  assert.equal(lookAt(r, 1, 1000, 0, 0), 0);
 });

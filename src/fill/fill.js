@@ -8,7 +8,7 @@ import { HULL_DUCK, HULL_STAND, fits, traceBox } from '../shared/game/hull.js';
 import { nodeAt } from './graph.js';
 import { lowerBound, tracksOf, windowsOf } from './rounds.js';
 import { fatPvs, holds, holdsAny, leafAt, pasOf, playerLeafs } from './vis.js';
-import { guidesFor } from './routes.js';
+import { guidesFor, lookAt } from './routes.js';
 import { findWay } from './way.js';
 
 export { ESTIMATE };
@@ -42,6 +42,8 @@ const GOOD_COST = 0.8;
 // The real players that fit the ends of a span, and how many of them (the most typical first) get a way.
 const CANDIDATES = 12;
 const TRIED = 3;
+// Units between the points before and after a point of a way at which the player stands.
+const STANDS = 16;
 // The points of a guide that typical() compares, and the units from which two guides are just "apart".
 const SAMPLES = 9;
 const APART = 1000;
@@ -585,6 +587,16 @@ function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, unti
     for (const p of points) {
       guide.at(clock(p.t), at);
       if (p.yaw === null && Math.hypot(p.x - at[0], p.y - at[1]) < GUIDE_LOOK) p.yaw = ((guide.yawAt(clock(p.t)) % 3600) + 3600) % 3600;
+    }
+  }
+  if (routes) {
+    // A player that stands looks where the real players of its side look at that place: a teammate that the radar
+    // does not move, an enemy that waits. A known end keeps the yaw that the demo holds.
+    for (let i = a ? 1 : 0; i < points.length - (b ? 1 : 0); i++) {
+      const [o, q] = [points[Math.max(0, i - 1)], points[Math.min(points.length - 1, i + 1)]];
+      if (Math.hypot(q.x - o.x, q.y - o.y) > STANDS) continue;
+      const yaw = lookAt(routes, side === 'CT' ? 1 : 0, points[i].x, points[i].y, points[i].z);
+      if (yaw !== null) points[i].yaw = yaw;
     }
   }
   turn(points);
