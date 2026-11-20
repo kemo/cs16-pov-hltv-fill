@@ -110,7 +110,8 @@ each step the player stays or goes to a floor that a run reaches in that time. T
 A hint inside the recorder's set says that the set hides nothing of this player now: the span beside it has no
 cost for a seen place. Else a way left the set between two such hints and came back.
 
-Nobody moves in the freeze of a round. When no way fits the time at the speed of a run, the search tries 1.3 and
+Nobody moves in the freeze of a round, and nobody moves while the demo holds no play for 30 s or more (a pause: the
+dead air that the import cuts, spec 02; a way that went on through it would be a leap once the pause is cut). When no way fits the time at the speed of a run, the search tries 1.3 and
 2 times that speed. Such a span is a way that the graph does not have (a jump over a gap or onto a box): where
 nothing stands between its two known places, the way is the straight line.
 
@@ -387,6 +388,11 @@ Tried and dropped, with the measure of each:
   two known places (one of them is an island: the top of a box that only a jump reaches). It takes 60% of the long
   straight lines away, but the error is a little worse (enemies' p90 386 to 390, teammates' 80 to 82) and more
   steps are too fast: where the graph has no way, the straight line is the better estimate.
+- The thrower of a grenade as a hint. A grenade in the recorder's set names its thrower (the `owner` of the
+  entity), and its arc, read back to the hand over a floor, gives the place of a hidden thrower with a median
+  error of 39 units where the flight before the set is 0.2 to 1 s long and the throw is 650 units a second or
+  faster (88% within 100 units). That gives about 9 hints in a match: no change of the measure (p90 412 to 411,
+  with a mask that hides a grenade outside the recorder's set).
 - The weight of the spawn point in the score of a guide (0, 0.3 and 1 for each unit) and the chance from which a
   planned point counts (0.3, 0.5): the same within 1%.
 
@@ -471,11 +477,6 @@ timeline; that is the player's own step after the fill.
 
 ## 10. Open
 
-- **The thrower of a grenade.** A grenade in the recorder's set names its thrower (the `owner` of the entity).
-  Its flight, read back along its arc to the floor, gives the place of a hidden thrower: median error 39 units,
-  but only for a flight of 0.2 to 1 s before the set at a throw speed of 650 units a second or more (88% within
-  100 units, about 9 such grenades in a match). `mask.js` hides no grenade yet, so the masked measure would
-  read flights that a POV demo does not hold: the mask comes first.
 - **The spawn point of a side that the demo never shows**, in a half with few early clues, stays open: the plan
   is under 0.5 there and the player starts on a free spawn as before.
 

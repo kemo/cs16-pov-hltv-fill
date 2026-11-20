@@ -3,6 +3,7 @@
 // archived demo never changes; every estimated sample has the ESTIMATE flag and its span is in
 // `timeline.estimates` ({entity, t0, t1, kind}); `timeline.fill` holds the version of the fill and its counts.
 
+import { deadAir } from '../dead-air.js';
 import { ESTIMATE } from '../shared/estimates.js';
 import { HULL_DUCK, HULL_STAND, fits, traceBox } from '../shared/game/hull.js';
 import { nodeAt } from './graph.js';
@@ -452,7 +453,10 @@ function context(timeline, level) {
     return t1 - last <= 1.2 && last > t0 - 0.5 && track.length > 0;
   };
   const flagsOf = (entity, t) => (sideOf(entity, t) === 'CT' ? 4 : 0) | ((lastRow(attribs.get(entity), t)?.[2] ?? 0) & 2);
-  return { timeline, level, windows, tracks, entities, sideOf, leftAt, plays, onRadar, heardAt, lag, hints, deaths, corpses, seenAt, flagsOf };
+  // Where the demo holds no play for a long time (a pause: the dead air that the import cuts), nobody moves. A
+  // way that went on through it would be a leap once the pause is cut.
+  const still = deadAir(timeline);
+  return { timeline, level, windows, tracks, entities, sideOf, leftAt, plays, onRadar, heardAt, lag, hints, deaths, corpses, seenAt, flagsOf, still };
 }
 
 /**
@@ -655,7 +659,7 @@ function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, unti
   const cap = (GUIDE_COST * GUIDE_FAR) / 100;
   for (speed of SPEEDS) {
     // A span of a second or more with no step of the player: it did not run where the recorder hears.
-    const base = { starts, end, t0, t1, seenAt, speed, goAt: a ? -Infinity : win.goAt, heardAt: t1 - t0 >= SILENT && !ctx.level.deaf ? ctx.heardAt : null };
+    const base = { starts, end, t0, t1, seenAt, speed, goAt: a ? -Infinity : win.goAt, heardAt: t1 - t0 >= SILENT && !ctx.level.deaf ? ctx.heardAt : null, still: ctx.still.filter(([from, to]) => to > t0 && from < t1) };
     for (const g of guides.length ? guides : [null]) {
       const found = (g && findWay(nav, { ...base, costOf: costOf(g), cap })) || findWay(nav, { ...base, costOf: g ? costOf(g) : null });
       if (found && (!way || found.cost < way.cost)) [way, guide] = [found, g];

@@ -68,3 +68,16 @@ test('a way follows the cost of the places, and nobody moves in the freeze', () 
   assert.ok(way.steps.some((s) => nav.xyz[s.node * 3 + 1] === 64), 'the cheap row is on the way');
   assert.ok(way.steps.filter((s) => s.t <= 2).every((s) => s.node === at(0, 0)));
 });
+
+test('nobody moves in a stretch with no play: the way goes before it and after it', () => {
+  const { nav, at } = gridNav(WORLD);
+  // 20 s from the left to the right, with no play from second 4 to second 16.
+  const way = findWay(nav, { starts: [{ node: at(0, 4), cost: 0 }], end: at(8, 4), t0: 0, t1: 20, still: [[4, 16]] });
+  assert.ok(way);
+  const inside = way.steps.filter((s) => s.t >= 3.6 && s.t <= 16.4);
+  assert.ok(inside.length > 20);
+  assert.ok(inside.every((s) => s.node === inside[0].node), 'one floor through the whole stretch');
+  assert.equal(way.steps.at(-1).node, at(8, 4));
+  // The whole time is such a stretch: no way to another floor.
+  assert.equal(findWay(nav, { starts: [{ node: at(0, 4), cost: 0 }], end: at(8, 4), t0: 0, t1: 20, still: [[0, 20]] }), null);
+});

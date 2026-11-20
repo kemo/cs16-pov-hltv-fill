@@ -24,10 +24,11 @@ const MAX_CELLS = 24e6;
  * have got a player there, `speed` how much faster than a run the player may go (1 is the game's limit), `goAt`
  * the time before which nobody moves (the freeze of a round), `cap` the cost of a second from which a floor is
  * off the way (too far from the guide), `heardAt(node, t)` whether the recorder would have heard a run there: the
- * demo holds no step of this span, so a run in such a place costs.
+ * demo holds no step of this span, so a run in such a place costs. `still`: the stretches ([from, to]) in which
+ * nobody moves (the demo holds no play there).
  * Returns {steps: [{t, node}], cost, seen: floors of the way in a seen place} or null when the time is too short for any way.
  */
-export function findWay(nav, { starts, end = -1, t0, t1, costOf = null, seenAt = null, speed = 1, goAt = -Infinity, cap = Infinity, heardAt = null }) {
+export function findWay(nav, { starts, end = -1, t0, t1, costOf = null, seenAt = null, speed = 1, goAt = -Infinity, cap = Infinity, heardAt = null, still = null }) {
   const n = nav.count;
   let count = Math.max(1, Math.ceil((t1 - t0) / STEP));
   while ((count + 1) * n > MAX_CELLS && count > 8) count = Math.ceil(count / 2);
@@ -65,7 +66,7 @@ export function findWay(nav, { starts, end = -1, t0, t1, costOf = null, seenAt =
   for (let k = 1; k <= count; k++) {
     const t = t0 + k * dt;
     const left = (count - k) * reach + 0.05;
-    const frozen = t - dt < goAt;
+    const frozen = t - dt < goAt || Boolean(still?.some(([from, to]) => t > from && t - dt < to));
     for (let a = 0; a < live.length; a++) {
       const u = live[a];
       const base = now[u];
