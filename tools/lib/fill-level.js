@@ -11,6 +11,7 @@ import { playData } from '../build-hulls.js';
 import { navOf } from '../build-nav.js';
 import { readBsp } from './bsp.js';
 import { writeNav } from '../../src/shared/game/nav.js';
+import { isCs16 } from '../../src/shared/cs16.js';
 
 const levels = new Map();
 
@@ -87,7 +88,7 @@ export function levelMapOf(timeline, assets = 'assets') {
  */
 export function fillLevelOf(timeline, assets = 'assets') {
   const map = levelMapOf(timeline, assets);
-  const v16 = (timeline.source?.netProtocol ?? 0) >= 47;
+  const v16 = isCs16(timeline);
   const both = existsSync(`${assets}/levels16/${map}.hull.bin`);
   const first = levelOfSet(map, v16 && both ? '16' : '', assets);
   if (timeline.source?.kind !== 'pov' || !first) return first;
