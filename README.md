@@ -177,6 +177,10 @@ A hidden player is not gone from the demo. The file still holds:
 - its place at each of its steps, hits and reloads that the recorder could hear;
 - its place and aim at each of its shots that the recorder could hear;
 - where its body lay after it died;
+- where it sprayed its logo: the server sends a logo to every client, with its player;
+- which spawn point it got. The game gives the spawn points of a side out in turn, in the order of the players'
+  entities, so the players that the demo shows on their points, a logo sprayed in the freeze, and the time at
+  which a hidden player first shows give the point of each hidden player;
 - that the server did not send it: so it was in no place that the recorder's client would have got. The BSP
   holds the same visibility data that the server used;
 - that it made no step sound: so it did not run near the recorder.
@@ -187,7 +191,9 @@ and does not run where the recorder would have heard it.
 
 Where the demo knows little (an enemy on the other side of the map at the start of a round), the way follows a
 real player: one that was at the same place at the same second of a round in an HLTV demo of the same map. This
-is what the routes file is for. Without it the hidden player takes the shortest way and waits.
+is what the routes file is for. Among the real players that fit, those that the demo contradicts go first (one
+that the recorder would have seen or heard), and the most typical of the rest leads the way. Without routes the
+hidden player takes the shortest way and waits.
 
 `fill.md` describes each rule and its source in the game's code.
 
@@ -199,13 +205,14 @@ gave routes to itself. A player's box is 32 units wide; a run is 250 units a sec
 
 | | Hidden time | Median error | p75 | p90 | Within 150 units | Standing still (median) |
 |-|-------------|--------------|-----|-----|------------------|--------------------------|
-| Teammates | 23.6 h | 17 | 40 | 91 | 92.5% | 637 |
-| Enemies | 74.7 h | 99 | 276 | 551 | 59.8% | 1522 |
+| Teammates | 23.6 h | 17 | 39 | 86 | 93.1% | 637 |
+| Enemies | 74.7 h | 29 | 136 | 403 | 76.6% | 1524 |
 
 "Standing still" leaves each hidden player where the demo last showed it: what a viewer shows without a fill.
 
-On three matches that exist as a real POV demo and as an HLTV demo, the enemies' median error is 36 to 52 units
-and the teammates' 13 to 26. Without routes the enemies' median on one of them goes from 40 to 121.
+On 31 matches that exist as a real POV demo and as an HLTV demo (63 runs of a POV part against an HLTV part),
+the enemies' median error is 48 units (p75 205, p90 549) and the teammates' 22. Routes matter: with the first
+version of the fill, the enemies' median on one such match went from 40 to 121 without them.
 
 Does it look real? The same faults were counted on the estimates and on the real samples of the demos:
 

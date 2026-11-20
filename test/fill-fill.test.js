@@ -66,12 +66,40 @@ test('a hint puts the hidden player at its place at its time', () => {
   assert.deepEqual(p.slice(1, 3), [288, 64]);
 });
 
+test('a spray logo of a hidden player puts the player on the floor nearest to the logo', () => {
+  // Player 2 is hidden from 1 s to 5 s and sprays on the wall of the right room at 3 s, 40 units over the floor.
+  const out = fillTimeline(timeline(walker, { sprays: [[3, 2, 300, 70, 40]] }), level());
+  assert.deepEqual(out.estimates.map((s) => [s.entity, s.t0, s.t1, s.kind]), [[2, 1, 3, 'hint'], [2, 3, 5, 'hint']]);
+  assert.deepEqual(rowOf(out.samples[30], 2).slice(1, 4), [288, 64, 0]);
+});
+
 test('a player that the demo never shows comes from a spawn of its side to its first hint', () => {
   const extra = { rounds: [{ t: 0, kind: 'start', seconds: 100 }], fires: [[4, 3, 160, 0, 0, 900, 0]] };
   const out = fillTimeline(timeline(walker, extra), level({ spawns: [{ side: 'CT', origin: [0, 0, 0] }, { side: 'T', origin: [288, 64, 0] }] }));
   assert.deepEqual(rowOf(out.samples[0], 3).slice(1, 3), [288, 64]);
   assert.deepEqual(rowOf(out.samples[40], 3).slice(1, 3), [160, 0]);
   assert.equal(rowOf(out.samples[40], 3)[4], 900, 'the yaw of the shot');
+});
+
+test('a logo sprayed in the freeze is no place of a way: its player stands on its spawn point then', () => {
+  const extra = { rounds: [{ t: 0, kind: 'start', seconds: 100 }], fires: [[4, 3, 160, 0, 0, 900, 0]], sprays: [[0.2, 3, 250, 90, 30]] };
+  const out = fillTimeline(timeline(walker, extra), level({ spawns: [{ side: 'CT', origin: [0, 0, 0] }, { side: 'T', origin: [288, 64, 0] }] }));
+  // One way from the spawn to the first hint, with no stop at the floor under the logo.
+  assert.deepEqual(out.estimates.filter((e) => e.entity === 3).map((e) => [e.t0, e.t1, e.kind]), [[0, 4, 'start'], [4, 6, 'end']]);
+  assert.deepEqual(rowOf(out.samples[0], 3).slice(1, 3), [288, 64]);
+});
+
+test('a hidden player starts on the spawn point that the order of the game gives it', () => {
+  const extra = { rounds: [{ t: 0, kind: 'start', seconds: 100 }], fires: [[4, 3, 160, 0, 0, 900, 0]] };
+  // Player 2 stands on the first T point at the restart, so player 3, the next entity of the side, has the
+  // second one. The third point is nearer to the first hint of player 3: without the order, its way starts there.
+  const spawns = [{ side: 'CT', origin: [0, 32, 0] }, { side: 'T', origin: [96, 32, 0] }, { side: 'T', origin: [288, 64, 0] }, { side: 'T', origin: [288, 0, 0] }];
+  const out = fillTimeline(timeline(walker, extra), level({ spawns }));
+  assert.deepEqual(rowOf(out.samples[0], 3).slice(1, 3), [288, 64]);
+  assert.equal(out.fill.spawns, 1);
+  // No T player stands on a point: nothing says which of three points player 3 has.
+  const other = fillTimeline(timeline(walker, extra), level({ spawns: [spawns[0], spawns[2], spawns[3], { side: 'T', origin: [288, 32, 0] }] }));
+  assert.equal(other.fill.spawns, 0);
 });
 
 test('a slot with a side that never plays gets no estimate: a referee, a spectator on a side', () => {
@@ -218,4 +246,22 @@ test('the most typical guide comes first: the one nearest to the others', async 
   assert.deepEqual(typical([round, a, b, c], 0, 10), [b, a, c, round]);
   // Two guides have no middle: their order stays.
   assert.deepEqual(typical([round, a], 0, 10), [round, a]);
+});
+
+test('the guides that the demo contradicts go: one in the recorder set, one that runs where the recorder hears', async () => {
+  const { leastFaults } = await import('../src/fill/fill.js');
+  // Three real players for a span of 10 s: one stands at x 64, one at x 192, one runs along y 64.
+  const stand = (x) => ({ at: (seconds, to) => Object.assign(to, [x, 32, 0]) });
+  const run = { at: (seconds, to) => Object.assign(to, [Math.min(288, seconds * 200), 64, 0]) };
+  const [left, right] = [stand(64), stand(192)];
+  const span = { nav, clock: (t) => t, t0: 0, t1: 10 };
+  // The recorder would have got a player in the left room from the server: the one that stands there goes.
+  const seenAt = (node) => nav.xyz[node * 3] <= 128;
+  assert.deepEqual(leastFaults([left, right], { ...span, seenAt, heardAt: null }), [right]);
+  // The recorder hears the whole floor: the runner goes, the two that stand make no sound.
+  assert.deepEqual(leastFaults([left, right, run], { ...span, seenAt: null, heardAt: () => true }), [left, right]);
+  // Every guide has a fault: the ones with the fewest seconds of it stay.
+  assert.equal(leastFaults([left, stand(96)], { ...span, seenAt, heardAt: null }).length, 2);
+  // No clue at all: the guides stay as they are.
+  assert.deepEqual(leastFaults([left, right], { ...span, seenAt: null, heardAt: null }), [left, right]);
 });

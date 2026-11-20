@@ -9,10 +9,11 @@ import { nodeAt } from './graph.js';
 import { lowerBound, tracksOf, windowsOf } from './rounds.js';
 import { fatPvs, holds, holdsAny, leafAt, pasOf, playerLeafs } from './vis.js';
 import { guidesFor, lookAt } from './routes.js';
+import { spawnPlan } from './spawns.js';
 import { findWay } from './way.js';
 
 export { ESTIMATE };
-export const FILL_VERSION = 6;
+export const FILL_VERSION = 7;
 
 // Seconds between two known places of a player above which the time between them is a span to fill.
 const MIN_GAP = 0.3;
@@ -39,9 +40,25 @@ const GUIDE_FAR = 800;
 const GUIDE_LOOK = 250;
 // The cost of a second under which a way follows its guide well enough: about 80 units beside it.
 const GOOD_COST = 0.8;
-// The real players that fit the ends of a span, and how many of them (the most typical first) get a way.
-const CANDIDATES = 12;
+// The real players that fit the ends of a span (whole rounds for a player with no known place), and how many of
+// them (the most typical first) get a way.
+const CANDIDATES = 48;
+const WHOLE = 40;
 const TRIED = 3;
+// Seconds after a restart in which a seen player is still on its spawn point, and how sure a planned spawn
+// point must be (spawns.js) for a hidden player to start on it.
+const AT_SPAWN = 2.5;
+const SURE = 0.5;
+// A spray logo: units from the logo up to the middle of the heights that its player can have, and the cells of
+// the walk graph within which the floor of the player lies.
+const SPRAY_UP = 10;
+// Seconds from a radar row within which a spray adds nothing.
+const SPRAY_YIELDS = 1.2;
+// Seconds after the freeze in which a spray still counts as made on the spawn point.
+const FREEZE_SLACK = 0.5;
+const SPRAY_CELLS = 4;
+// Units a second from which the steps of a player make a sound (a walk and a duck are silent).
+const STEPS = 160;
 // Units between the points before and after a point of a way at which the player stands.
 const STANDS = 16;
 // The points of a guide that typical() compares, and the units from which two guides are just "apart".
@@ -69,20 +86,36 @@ export function fillTimeline(timeline, level) {
   const ctx = context(timeline, level);
   const ways = new Map();
   const estimates = [];
-  const count = { ways: 0, guided: 0, relaxed: 0, straight: 0, seen: 0 };
+  const count = { ways: 0, guided: 0, relaxed: 0, straight: 0, seen: 0, spawns: 0 };
 
+  const livesOf = new Map();
   for (const win of ctx.windows) {
-    // The players with a known place first: their guides name the real rounds that the others of their team follow.
     const lives = [];
     for (const entity of ctx.entities) {
       const life = lifeOf(ctx, win, entity);
       if (life) lives.push({ entity, life, known: knownOf(ctx, entity, life) });
     }
+    livesOf.set(win, lives);
+  }
+  const spawns = spawnsOf(ctx, livesOf);
+  // A logo sprayed in the freeze is a clue of the spawn point only: its player stands on that point, and the
+  // floor nearest to the logo is another place, which no way reaches while nobody moves.
+  for (const [win, lives] of livesOf) {
+    for (const life of lives) life.known = life.known.filter((p) => !(p.kind === 'spray' && p.t <= win.goAt + FREEZE_SLACK));
+  }
+
+  for (const win of ctx.windows) {
+    // The players with a known place first: their guides name the real rounds that the others of their team follow.
+    const lives = livesOf.get(win);
     lives.sort((x, y) => (x.known.length ? 0 : 1) - (y.known.length ? 0 : 1));
     for (const { entity, life, known } of lives) {
       const side = life.side;
       const add = (a, b, open, before = null, after = null, laters = null, short = false) => {
-        const way = short ? straight(a, b) : wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, until: life.t1 });
+        // A player from its spawn starts on the point that the order of the game gives it, where that is sure.
+        const planned = !a && life.fromSpawn ? spawns.get(win)?.get(entity) : null;
+        const spawn = planned && planned.sure >= SURE ? planned : null;
+        const way = short ? straight(a, b) : wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, until: life.t1, spawn });
+        if (way?.spawned) count.spawns++;
         if (!way) return;
         count.ways++;
         if (way.speed > 1) count.relaxed++;
@@ -290,6 +323,15 @@ function context(timeline, level) {
   for (const [t, entity, x, y, z] of timeline.radar ?? []) hint(entity, { t: t - lag, x, y, z, kind: 'radar' });
   for (const [t, entity, x, y, z, yaw] of timeline.fires ?? []) hint(entity, { t: t - lag, x, y, z, yaw: ((yaw % 3600) + 3600) % 3600, kind: 'fire' });
   for (const [t, name, entity, x, y, z] of timeline.sounds ?? []) if (stepNames[name] && entity >= 1) hint(entity, { t: t - lag, x, y, z, kind: 'sound' });
+  // A spray logo names its player, and the server sends it to every client. The player stands within reach of
+  // it (128 units): the hint is the floor nearest to the logo, and `logo` keeps the place of the logo itself.
+  for (const [t, entity, x, y, z] of timeline.sprays ?? []) {
+    // The radar holds the place of a teammate better than its logo does.
+    if ((hints.get(entity) ?? []).some((h) => h.kind === 'radar' && Math.abs(h.t - (t - lag)) <= SPRAY_YIELDS)) continue;
+    const node = nodeAt(nav, [x, y, z + SPRAY_UP], SPRAY_CELLS);
+    if (node >= 0) hint(entity, { t: t - lag, x: nav.xyz[node * 3], y: nav.xyz[node * 3 + 1], z: nav.xyz[node * 3 + 2], kind: 'spray', logo: [x, y, z] });
+  }
+  for (const list of hints.values()) list.sort((p, q) => p.t - q.t);
   const deaths = byEntity((timeline.kills ?? []).map((k) => [k.t, k.victim]));
   // A slot plays in a part of the match (a demo of a join: a slot can hold another player in each) when the demo
   // shows it alive there, names it in a kill or a shot, or holds it on the radar more than once (a living teammate
@@ -441,6 +483,46 @@ export function lagOf(timeline, tracks, own) {
   return Math.round(best * 100) / 100;
 }
 
+/**
+ * The spawn point of each player at each restart (spawnPlan() of spawns.js), from what the demo holds of every
+ * player there: Map(window -> Map(entity -> {x, y, z, yaw, sure})).
+ */
+function spawnsOf(ctx, livesOf) {
+  const { timeline, level } = ctx;
+  const recorderAt = (t) => (timeline.recorders ?? [[0, timeline.recorder]]).findLast((r) => r[0] <= t)?.[1] ?? timeline.recorder;
+  // A slot takes a spawn point only while a player holds it and plays: a slot with a side and no name is empty
+  // (the side of a player that left stays in the demo), and a referee on a side does not spawn.
+  const names = new Map();
+  for (const row of timeline.names ?? []) {
+    if (!names.has(row[1])) names.set(row[1], []);
+    names.get(row[1]).push(row);
+  }
+  const named = (entity, t) => !names.size || Boolean(names.get(entity)?.findLast((row) => row[0] <= t + 0.5)?.[2]);
+  const restarts = ctx.windows.filter((win) => win.round);
+  // Between two parts of a joined match nobody knows how many restarts there were.
+  const cuts = (timeline.recorders ?? []).map(([t]) => t).filter((t) => t > 0);
+  const breaks = new Set(restarts.map((win, i) => (i > 0 && cuts.some((t) => t > restarts[i - 1].t0 && t <= win.t0 + 1) ? i : -1)).filter((i) => i >= 0));
+  return spawnPlan(level, restarts.map((win) => {
+    const t = win.t0 + 0.1;
+    const players = [];
+    for (const entity of ctx.entities) {
+      const side = ctx.sideOf(entity, t);
+      if ((side !== 'T' && side !== 'CT') || !named(entity, t) || !ctx.plays(entity, t)) continue;
+      const track = ctx.tracks.get(entity) ?? [];
+      const at = track[lowerBound(track, t)];
+      const seen = at && at[0] <= win.t0 + AT_SPAWN ? [at[1], at[2]] : null;
+      const known = livesOf.get(win).find((life) => life.entity === entity)?.known ?? [];
+      // A spray in the freeze is made on the spawn point; the first known place after it says where the player went.
+      const inFreeze = (p) => p.kind === 'spray' && p.t <= win.goAt + FREEZE_SLACK;
+      const spray = seen ? null : known.find(inFreeze)?.logo ?? null;
+      const next = seen ? null : known.find((p) => !inFreeze(p));
+      const first = next && !next.leap ? { x: next.x, y: next.y, z: next.z, at: next.t - win.goAt } : null;
+      players.push({ entity, side, own: entity === recorderAt(t), seen, first, spray });
+    }
+    return { win, players };
+  }), breaks);
+}
+
 /** The life of a player in a window: {t0, t1, side, fromSpawn, died}; null when it has no side there or does not play. */
 function lifeOf(ctx, win, entity) {
   const side = ctx.sideOf(entity, win.t0 + 0.1) ?? ctx.sideOf(entity, win.t1 - 0.1);
@@ -495,7 +577,7 @@ function knownOf(ctx, entity, life) {
 }
 
 /** The estimated way of one span: {points: [{t, x, y, z, yaw}], kind, speed, straight, seen}. */
-function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, until }) {
+function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, until, spawn = null }) {
   const { nav, hull, spawns, routes } = ctx.level;
   const t0 = a ? a.t : win.t0;
   const t1 = b ? b.t : until;
@@ -515,6 +597,9 @@ function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, unti
     win.spawned ??= new Set();
     starts = (spawns ?? []).filter((s) => s.side === side && !taken.some((p) => Math.hypot(p[1] - s.origin[0], p[2] - s.origin[1]) < ON_SPAWN))
       .map((s) => ({ node: nodeAt(nav, s.origin, 4), cost: 0 })).filter((s) => s.node >= 0 && !win.spawned.has(s.node));
+    const own = spawn ? nodeAt(nav, [spawn.x, spawn.y, spawn.z], 4) : -1;
+    if (own >= 0) starts = [{ node: own, cost: 0 }];
+    else spawn = null;
     if (!starts.length) return null;
   }
   const end = b ? floorOf(nav, b) : -1;
@@ -543,8 +628,9 @@ function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, unti
     const heading = wayAt(before, a);
     const headingB = wayAt(b, after);
     win.used ??= new Set();
-    guides = guidesFor(routes, { side: side === 'CT' ? 1 : 0, a: end(a), b: end(b), until: clock(t1), heading, headingB, laterB: laters?.map(end), used: win.used, rounds: (win.teams ??= { T: new Set(), CT: new Set() })[side], seed: entity * 131 + Math.round(win.t0), limit: a || b ? CANDIDATES : TRIED });
-    guides = typical(guides, clock(t0), clock(t1)).slice(0, TRIED);
+    guides = guidesFor(routes, { side: side === 'CT' ? 1 : 0, a: end(a), b: end(b), until: clock(t1), heading, headingB, laterB: laters?.map(end), from: spawn, used: win.used, rounds: (win.teams ??= { T: new Set(), CT: new Set() })[side], seed: entity * 131 + Math.round(win.t0), limit: a || b ? CANDIDATES : WHOLE });
+    const heardAt = t1 - t0 >= SILENT && !ctx.level.deaf ? ctx.heardAt : null;
+    guides = typical(leastFaults(guides, { nav, clock, t0, t1, seenAt, heardAt }), clock(t0), clock(t1)).slice(0, TRIED);
   }
   const at = [0, 0, 0];
   const costOf = (guide) => (node, t) => {
@@ -575,10 +661,14 @@ function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, unti
   // No way at the speed of a run: the player took a way that the graph does not have (a jump over a gap or onto a
   // box). Where nothing stands between the two known places, that way is the straight line.
   if (a && b && (!way || speed > 1) && clearLine(hull, a, b)) return straight(a, b);
+  // No way from the planned spawn point (no floor of the walk graph leads from it in time): a free spawn, as before.
+  if (!way && spawn) return wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, until });
   if (!way) return a && b ? straight(a, b) : null;
 
   const points = way.steps.map(({ t, node }) => ({ t, x: nav.xyz[node * 3], y: nav.xyz[node * 3 + 1], z: nav.xyz[node * 3 + 2], yaw: null }));
   if (a) Object.assign(points[0], { x: a.x, y: a.y, z: a.z, yaw: a.yaw ?? null });
+  // On its spawn point through the freeze: the point itself, not the floor of the walk graph beside it.
+  else if (spawn) for (const p of points) if (p === points[0] || p.t <= win.goAt + 0.01) Object.assign(p, { x: spawn.x, y: spawn.y, z: spawn.z });
   if (b) Object.assign(points.at(-1), { x: b.x, y: b.y, z: b.z, yaw: b.yaw ?? null });
   smooth(points, hull);
   pace(points);
@@ -600,7 +690,35 @@ function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, unti
     }
   }
   turn(points);
-  return { points, kind: open ?? (a.kind === 'seen' && b.kind === 'seen' ? 'between' : 'hint'), speed, straight: false, seen: way.seen, guided: Boolean(guide) };
+  return { points, kind: open ?? (a.kind === 'seen' && b.kind === 'seen' ? 'between' : 'hint'), speed, straight: false, seen: way.seen, guided: Boolean(guide), spawned: Boolean(spawn) };
+}
+
+/**
+ * The guides that the demo contradicts least. A real player that was where the recorder would have got it from the
+ * server (`seenAt`), or that ran where the recorder would have heard its steps (`heardAt`), did what the hidden
+ * player did not do. The seconds of both faults are counted along each guide; the guides with the fewest stay.
+ */
+export function leastFaults(guides, { nav, clock, t0, t1, seenAt, heardAt }) {
+  if (guides.length < 2 || (!seenAt && !heardAt)) return guides;
+  const faults = new Array(guides.length).fill(0);
+  const at = [0, 0, 0];
+  const before = guides.map((g) => {
+    g.at(clock(t0 + 0.5), at);
+    return [at[0], at[1]];
+  });
+  // The seconds outside, the guides inside: seenAt() and heardAt() keep the set of one moment.
+  for (let t = t0 + 1.5; t < t1 - 1; t += 1) {
+    for (let k = 0; k < guides.length; k++) {
+      guides[k].at(clock(t), at);
+      const ran = Math.hypot(at[0] - before[k][0], at[1] - before[k][1]) > STEPS;
+      before[k][0] = at[0];
+      before[k][1] = at[1];
+      const node = nodeAt(nav, at, 4);
+      if (node >= 0 && (seenAt?.(node, t) || (ran && heardAt?.(node, t)))) faults[k]++;
+    }
+  }
+  const least = Math.min(...faults);
+  return guides.filter((g, k) => faults[k] <= least);
 }
 
 /**

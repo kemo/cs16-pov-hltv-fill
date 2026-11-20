@@ -31,6 +31,8 @@ The demo still holds these facts of a player outside that set:
 | Its place and aim at each shot | `svc_event` of a weapon: the event of a player outside the packet carries origin and angles; the server sends it to the audible set | `fires`: `[t, entity, x, y, z, yaw, pitch]` |
 | Its place at each step, hit, reload, pickup | `svc_sound` with its entity and origin, sent to the audible set | `sounds` |
 | Where it died | `ClCorpse`, sent to every client | `corpses` |
+| Where it sprayed its logo | `TE_PLAYERDECAL` with the entity of the player, sent to every client; the player is within 128 units of the logo | `sprays`: `[t, entity, x, y, z]` |
+| Which spawn point it got | the order in which the game gives the points out (section 6a) | the players that the demo shows on their points |
 | That it lives, its side, its kills | DeathMsg, TeamInfo, ScoreAttrib | `kills`, `sides`, `attribs` |
 | That the recorder did not get it | the recorder's eye and the level's visibility data | `eyes`: `[t, x, y, z]` |
 | That it did not run near | no step sound in the recorder's audible set | `sounds`, `eyes` |
@@ -69,13 +71,14 @@ agree on 96.8% of the samples.
    another player in each). A referee or a spectator that sits on a side, and a slot that its player left, have
    none of these in a whole half and get no life. Fill version 5 has this rule; 22 of the 219 filled matches
    held such a slot and are built again, the others keep version 4 with the same samples.
-3. **Known places.** The seen samples, then the hints of section 2 between them. A hint that no run reaches from
+3. **Known places.** The seen samples, then the hints of section 2 between them (a spray gives the floor nearest
+   to the logo). A hint that no run reaches from
    the known place before it is another's and goes. A seen sample that no run joins to the places before it is a
    leap of the game (a respawn before the round's own clock): no way leads into it.
 4. **Spans.** Each time of more than 0.3 s between two known places is a span. A shorter time between a hint
    and the next known place gets the straight line, so the player is never gone for a moment. A life with no
-   known place at its start or at its end has an open span there: from a free spawn of the side, or to wherever
-   the way goes.
+   known place at its start or at its end has an open span there: from its spawn point (section 6a; a free spawn
+   of the side where that point is not sure), or to wherever the way goes.
 5. **A way for each span** (`way.js`, section 5), then its corners rounded where the box still fits, its times
    paced so that no part is faster than a run where the whole time allows it (`pace()`), and its yaw set. Ways
    that meet at a hint are paced as one way: the time of a hint is not as exact as its place, so a part faster
@@ -135,12 +138,18 @@ A span of 2.5 s or more takes guides from the routes: real players of the same s
   where one is free (the players with a known place get their ways first), only in a round with a kill. In a
   pause the player stays on its spawn.
 
-A span with a known end asks for 12 such real players and takes the most typical ones first: the guide that
-lies nearest to the others (`typical()`, the mean distance at 9 moments of the span, at most 1000 units a pair).
+A span with a known end asks for 48 such real players (40 whole rounds for a player with nothing known). First
+the guides that the demo contradicts go (`leastFaults()`): a real player that was where the recorder would have
+got it from the server, or that ran where the recorder would have heard its steps, did what the hidden player did
+not do. The seconds of both faults are counted along each guide, and the guides with the fewest stay. On the
+masked demos the truth has such a second in 1.4% of the spans, a candidate in 15% (heard) and 4% (seen). Then the
+span takes the most typical ones first: the guide that lies nearest to the others (`typical()`, the mean distance
+at 9 moments of the span, at most 1000 units a pair).
 The best fit of the ends is one person's choice of that round; most players that fit the ends went another way.
 The first 3 of that order give a way each (section 5); the cheapest stays. Near its guide the player looks where the real player
 looked. Two hidden players of a round never follow the same route or take the same spawn. A teammate of a living
-recorder with no radar row did not move: its span takes no guide.
+recorder with no radar row did not move: its span takes no guide. A player that starts on a sure spawn point
+(section 6a) prefers the real players that started near that point (0.3 of the score for each unit, up to 600).
 
 **Where a hidden player looks.** Along its way it looks where it goes, and near its guide where the real player
 looked. A player that stands looks where the real players of its side look at that place (`lookAt()`: the mean
@@ -148,6 +157,35 @@ direction of the standing points of the routes in a cell of 96 units, from 6 poi
 yaw that the demo holds.
 
 A level with no routes still fills: the hidden players take the shortest ways between their known places.
+
+## 6a. The spawn points (`spawns.js`)
+
+The game gives the spawn points of a side out in turn (`EntSelectSpawnPoint` of the game: the next free point
+after the one that it gave last). At a restart the players get their points in the order of their entities, so
+the players of a side stand on points that follow each other in the level's list, and the next restart goes on
+after the last of them. On 24 HLTV demos the players of a side stand in turn in 93% of the rounds
+(1,700 checks); the rest are restarts where a point was not free. A POV demo of an online match of 2005 shows
+the same on the recorder's own team, round after round.
+
+So the point of the first player of a side at a restart is one number, and the restarts of a match are a chain
+of such numbers. `spawnPlan()` finds the most likely chain for each side (forward and backward over the
+restarts) from these clues:
+
+- **A player on its point.** The recorder itself, or two players of a side that agree: the demo shows the state.
+  A side that the demo shows at two restarts in a row also counts the restarts between them for the other side:
+  none (the demo holds one restart as two round windows, because the clock of a round comes twice), one, or more
+  (three restarts in a row before a match have no window each).
+- **A logo sprayed in the freeze.** Nobody moves in the freeze, so the point is within 150 units of the logo.
+- **The first known place of a hidden player** in the first 30 s of the round: the share of the real players from
+  each point (the routes of section 6) that pass within 120 units of that place within 0.5 s of that time. The
+  time is the strong part: a run from another point comes a moment sooner or later.
+- **The step from one restart to the next:** the count of the players of the side that took points, with a point
+  left out at 7% of the restarts and two at 2%. Between two parts of a joined match the count of the restarts is
+  not known, but each one gave every player a new point: on a level with 20 points and 5 players 4 states are left.
+
+Only a slot that takes a point counts: it has a name (the side of a player that left stays in the demo) and it
+plays (a referee on a side does not spawn; section 4, the lives). A hidden player starts on its point when the
+chosen state has a chance of 0.5 or more. It stands there through the freeze, on the point itself.
 
 ## 7. The measure
 
@@ -273,6 +311,48 @@ A moving enemy that looked along its true way would have a median of 27: the yaw
 that limit. A standing enemy at its true place would have 16 with `lookAt()`; its estimate has 30, because the
 place is off. `tools/measure-fill.js` prints the yaw of each run since then.
 
+**Version 7 (2026-11-20).** Three changes (sections 6 and 6a): a span drops the guides that the demo contradicts,
+among 48; a spray logo is a hint; a hidden player starts on the spawn point that the game gave it.
+
+| Enemies | Median | p75 | p90 | Within 150 | Within 400 |
+|---------|--------|-----|-----|------------|------------|
+| 24 HLTV demos, masked: version 6 | 93 | 240 | 487 | 62.8% | 86.6% |
+| 24 HLTV demos, masked: version 7 | 29 | 136 | 403 | 76.6% | 89.9% |
+| 63 runs of real pairs: version 6 | 99 | 271 | 602 | 60.2% | 83.3% |
+| 63 runs of real pairs: version 7 | 48 | 205 | 549 | 69.9% | 85.6% |
+
+The teammates stay as they were on the masked demos (median 17, p90 89 to 86), and so do the faults that need no
+truth (42 to 39 jumps of the place, 0.6% to 0.5% in the recorder's set). The enemies' median by map: de_nuke 59 to
+15, de_dust2 82 to 29, de_inferno 77 to 36, de_train 150 to 40. The yaw of an enemy is 21 degrees off in the
+middle (27 before), because a player on its spawn point looks as the real players there do. The fill takes 3 to
+13% longer (two measures under other loads of the machine).
+
+The parts, on 8 HLTV demos with two recorders each, each half as a demo of its own (as the two files of a match):
+
+| Enemies | Median | p75 | p90 |
+|---------|--------|-----|-----|
+| Version 6 | 96 | 239 | 514 |
+| With the guides that the demo contradicts least, among 48 | 96 | 224 | 461 |
+| With the spawn points and the sprays too (version 7) | 28 | 138 | 412 |
+| With the true spawn point of every hidden player, and no spray | 25 | 128 | 412 |
+
+The spawn point is the largest part: an enemy stands on it through the freeze of every round, and a POV demo
+never shows it there. With the true point of every hidden player (the limit of section 6a) the enemies' median on
+the 8 demos is 25 units. The plan finds the exact point of a hidden enemy in 88% of the cases on those demos
+when each half is a demo of its own (as the two files of a match are), and in 94% where it is sure by 0.8 or more.
+
+On real POV demos nothing shows the true point, but a logo sprayed in the freeze is a check when the plan does
+not read the sprays: on 24 matches of the archive (859 rounds) the planned point is within reach of 96% of the
+605 such logos (23% by chance).
+
+On the real pairs the teammates stay as they were (median 22, p90 89), and 98.6% of the enemies' hidden time has
+an estimate (98.5% before). The enemies' median by map: de_nuke 57 to 27, de_inferno 97 to 40, de_dust2 96 to 53,
+de_train 156 to 54, de_clan1_mill 83 to 76, de_aztec 126 to 86, de_cpl_mill 129 to 97, de_tuscan 151 to 155,
+de_prodigy 329 to 280. The gain is smaller than on the masked demos: the freeze of an online match is shorter
+than the freeze of the matches that the HLTV demos hold. The span from a spawn to the first known place (a third
+of the estimated time) has a median of 32 units now. The largest part of the error that is left (35%) is the
+span of over 8 s with a hint at an end (median 162).
+
 Tried and dropped, with the measure of each:
 
 - A player that nothing shows again stays, or goes on for longer, by its side: staying lowers the median and
@@ -285,6 +365,24 @@ Tried and dropped, with the measure of each:
   the others (0.12 against 0.11).
 - The scoreboard as the name of the defuser: a step of 3 frags lies at 4 of 52 defuses.
 - Among whole rounds for a player with nothing known, the routes that last the whole span first: no change.
+- A guide whose real round has its team, or the other team, where the known players of the hidden round are (the
+  layout of the round): the rank of that fit says nothing of the error of the guide (correlation 0.02 and 0.03;
+  the "most typical" order has 0.47).
+- A guide near the planted bomb at the time of the plant, and one whose real round had the same count of living
+  players: no change.
+- A guide that is in the sight of a living player of the other side for some seconds with no kill between them:
+  the truth is so in 2.5% of the spans and a candidate in 5%; the gain is under 1%.
+- A guide that stands, or moves, as the hidden player does at its known end: no change.
+- 96 guides and not 48: 2% better on the log of the candidates, for twice the reading.
+- A wider window of time in the spawn clue where the narrow one holds too few real players: no change.
+- The bomb carrier as a hint. The demo names the carrier of both sides (`ScoreAttrib` goes to every client), so
+  the player whose flag ends at a plant stood at the bomb for the 3 s of the plant, and the last living CT at a
+  defuse stood there too. On 25 matches of the archive the planter is named at all 374 plants and is a hidden
+  enemy at 70 of them: too few to move the measure (p90 412 to 410).
+- A free spawn in place of the planned point where the way from that point is faster than a run: the median goes
+  from 28 to 42. The plan is right more often than the walk graph is exact.
+- The weight of the spawn point in the score of a guide (0, 0.3 and 1 for each unit) and the chance from which a
+  planned point counts (0.3, 0.5): the same within 1%.
 
 **The audit of an import.** `tools/audit-fill.js` on the 325 filled matches of one player's archive (2003 to
 2011, online play): 176 million estimated steps hold 32 jumps of the
@@ -314,6 +412,13 @@ A map can have two builds with one name (CS 1.5 and CS 1.6). `fillLevelOf()` tak
 of the demo lie in the recorder's set (`levelFit()`, about 0.98 on the right build): the net protocol does not
 say it, a demo of 2003 with protocol 46 was played on the newer de_inferno. With no build over 0.95, and for a
 level with no files, the timeline stays as it is ("no fill" in the log).
+
+Two kinds of POV demo get no fill by rule (`noFillRule()` of the import, owner 2026-11-19), and the page plays
+them as recorded (spec 05, section 2b):
+
+- A demo of a map with too few routes for a good fill. The list holds de_prodigy (4 HLTV demos, 2 of bad quality).
+- A recording of a spectator: its recorder has no side in the match. The fill runs on it, but the measure has no
+  mask that follows several players, so nobody knows how good the result is.
 
 A map can also have two names with one set of walls. The player has no files of de_clan1_mill, so a POV demo of
 it takes the level of de_cpl_mill (`levelMapOf()`), and `levelFit()` judges that choice like any other (0.98 to
@@ -359,6 +464,14 @@ the standalone output and 97% within 50 units. The standalone tool does not cut 
 timeline; that is the player's own step after the fill.
 
 ## 10. Open
+
+- **The thrower of a grenade.** A grenade in the recorder's set names its thrower (the `owner` of the entity).
+  Its flight, read back along its arc to the floor, gives the place of a hidden thrower: median error 39 units,
+  but only for a flight of 0.2 to 1 s before the set at a throw speed of 650 units a second or more (88% within
+  100 units, about 9 such grenades in a match). `mask.js` hides no grenade yet, so the masked measure would
+  read flights that a POV demo does not hold: the mask comes first.
+- **The spawn point of a side that the demo never shows**, in a half with few early clues, stays open: the plan
+  is under 0.5 there and the player starts on a free spawn as before.
 
 - **An HLTV `.dem` file.** `src/dem` writes a filled copy of a POV demo (`fill --dem`): the packet entities of each
   frame again, with the estimated players, a new place for an event that names its entity by its place in the

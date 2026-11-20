@@ -40,7 +40,7 @@ timeline of 7 and before has coarser angles and no punch on its shots (section 3
 | `bombs` | `{t, kind: planted, defused, exploded}` | TextMsg, SendAudio |
 | `scores` | `{t, team, score}` | TeamScore |
 | `cues` | `[t, primary, secondary, flags]` | `svc_director` DRC_CMD_EVENT |
-| `views` | `[t, x, y, yaw]` of a POV recorder | frame demo info |
+| `views` | `[t, x, y, yaw, z, pitch]`: the camera of a POV recording (the eye of its recorder, or of the player that a dead recorder or a spectator watches). A row of an older build ends at the yaw | frame demo info |
 | `eyes` | `[t, x, y, z]`: the point of the recorder's set, at each change (POV only) | `svc_clientdata`, `serverEye()` |
 | `radar` | `[t, entity, x, y, z]` of a teammate (POV only) | Radar |
 | `fires` | `[t, entity, x, y, z, yaw, pitch]` of a shot by a player outside the packet (POV only) | `svc_event` of a weapon |

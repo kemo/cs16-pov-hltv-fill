@@ -13,6 +13,13 @@ export const TICK = 0.5;
 const MAX_SECONDS = 150;
 // Seconds that a player with no later known place goes on along its guide.
 const GO_ON = 5;
+// The score of a guide for each unit between its start and the spawn point of the hidden player, up to FROM_FAR
+// units; and for a player with no known place, the units within which a whole round starts "from that point"
+// and how many such rounds make a pool.
+const FROM = 0.3;
+const FROM_FAR = 600;
+const FROM_NEAR = 100;
+const FROM_ENOUGH = 8;
 // The yaw field (lookAt()): units of a cell and of a floor, units between two points of a player that stands, and
 // the points from which a cell has a yaw.
 const LOOK_CELL = 96;
@@ -434,8 +441,15 @@ const keep = (found, r, hit) => {
  * player's way at `a`, `headingB` at `b`, or null. `used` holds the routes that other players of this round follow,
  * `rounds` the real rounds of the guides of its team: a player with no known place takes a route of one of them.
  * `laterB`: the known places after `b` ({x, y, z, at}), which a guide to `b` should pass too.
+ * `from`: the spawn point of the player ({x, y}), where spawns.js is sure of it: a guide from near it comes first.
  */
-export function guidesFor(routes, { side, a, b, until, heading = null, headingB = null, used = null, rounds = null, laterB = null, limit = 3, seed = 0 }) {
+export function guidesFor(routes, { side, a, b, until, heading = null, headingB = null, used = null, rounds = null, laterB = null, limit = 3, seed = 0, from = null }) {
+  // How far a route starts from the spawn point of the hidden player (`from`), as a part of its score.
+  const fromOf = (r) => {
+    if (!from) return 0;
+    const p = placeOf(routes, r, 0, other);
+    return FROM * Math.min(FROM_FAR, Math.hypot(p[0] - from.x, p[1] - from.y));
+  };
   const found = new Map();
   const free = (r) => !used?.has(r);
   const tau = (r, i) => (routes.k0[r] + i) * TICK;
@@ -485,7 +499,7 @@ export function guidesFor(routes, { side, a, b, until, heading = null, headingB 
       if (!free(r) || routes.k0[r] > 2) return;
       const late = b.at - tau(r, i);
       if (Math.abs(late) > 5) return;
-      keep(found, r, { r, i, late, score: d + 40 * Math.abs(late) + turnOf(r, i, headingB) + later(r, i) });
+      keep(found, r, { r, i, late, score: d + 40 * Math.abs(late) + turnOf(r, i, headingB) + later(r, i) + fromOf(r) });
     });
     // A later player waited that much longer before it left; an earlier one goes that much sooner on the way.
     return best(found, limit).map(({ r, i, late }) => guide(r, (seconds) => {
@@ -509,8 +523,16 @@ export function guidesFor(routes, { side, a, b, until, heading = null, headingB 
   for (let r = 0; r < routes.n; r++) if (routes.side[r] === side && !routes.out?.[r] && routes.k0[r] <= 2 && free(r) && tau(r, routes.count[r] - 1) >= Math.min(until, 20)) whole.push(r);
   // A teammate of the real players that the team follows already, when one is free.
   const mates = whole.filter((r) => rounds?.has(routes.round[r]));
-  const from = mates.length ? mates : whole;
+  let pool = mates.length ? mates : whole;
+  // The real players from the spawn point of the hidden one, when enough of them are there.
+  if (from) {
+    const near = whole.filter((r) => {
+      const p = placeOf(routes, r, 0, other);
+      return Math.hypot(p[0] - from.x, p[1] - from.y) < FROM_NEAR;
+    });
+    if (near.length >= FROM_ENOUGH) pool = near;
+  }
   const picks = [];
-  for (let k = 0; k < limit && from.length; k++) picks.push(from[Math.abs((seed * 7919 + k * 104729) % from.length)]);
+  for (let k = 0; k < limit && pool.length; k++) picks.push(pool[Math.abs((seed * 7919 + k * 104729) % pool.length)]);
   return picks.map((r) => guide(r, (seconds) => seconds / TICK - routes.k0[r]));
 }

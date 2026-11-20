@@ -415,7 +415,7 @@ function buildOnce(buf, { file = null, weaponBits = 6, builder = null, frameTime
       return { team: team ?? null, dead: ((attribs.get(entity) ?? 0) & 1) !== 0 };
     });
     if (!state.hltv) {
-      views.push([round2(time), Math.round(frame.view.origin[0]), Math.round(frame.view.origin[1]), Math.round(frame.view.angles[1])]);
+      views.push([round2(time), Math.round(frame.view.origin[0]), Math.round(frame.view.origin[1]), Math.round(frame.view.angles[1]), Math.round(frame.view.origin[2]), Math.round(frame.view.angles[0])]);
       const eye = serverEye(state.clientdata);
       const last = eyes.at(-1);
       if (eye && (!last || last[1] !== eye[0] || last[2] !== eye[1] || last[3] !== eye[2])) eyes.push([round2(at), ...eye]);
