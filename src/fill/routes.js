@@ -428,6 +428,7 @@ export function pointsNear(routes, side, place, radius, each) {
   }
 }
 
+const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 const best = (found, limit) => [...found.values()].sort((a, b) => a.score - b.score).slice(0, limit);
 const keep = (found, r, hit) => {
   const old = found.get(r);
@@ -532,7 +533,11 @@ export function guidesFor(routes, { side, a, b, until, heading = null, headingB 
     });
     if (near.length >= FROM_ENOUGH) pool = near;
   }
+  // Each route once, in an order that the seed gives: a small pool has fewer guides, not one guide again.
   const picks = [];
-  for (let k = 0; k < limit && pool.length; k++) picks.push(pool[Math.abs((seed * 7919 + k * 104729) % pool.length)]);
+  const first = Math.abs(seed * 7919) % (pool.length || 1);
+  let stride = 104729 % (pool.length || 1) || 1;
+  while (gcd(stride, pool.length) !== 1) stride++;
+  for (let k = 0; k < Math.min(limit, pool.length); k++) picks.push(pool[(first + k * stride) % pool.length]);
   return picks.map((r) => guide(r, (seconds) => seconds / TICK - routes.k0[r]));
 }

@@ -89,6 +89,17 @@ test('a logo sprayed in the freeze is no place of a way: its player stands on it
   assert.deepEqual(rowOf(out.samples[0], 3).slice(1, 3), [288, 64]);
 });
 
+test('with no sure spawn point, a logo sprayed in the freeze says near which spawn its player stands', () => {
+  // Nobody of the T side stands on a point, so the order gives none. Player 3 sprays beside one of three points.
+  const spawns = [{ side: 'CT', origin: [0, 0, 0] }, { side: 'T', origin: [288, 0, 0] }, { side: 'T', origin: [96, 64, 0] }, { side: 'T', origin: [192, 64, 0] }];
+  const startOf = (logo) => {
+    const extra = { rounds: [{ t: 0, kind: 'start', seconds: 100 }], fires: [[4, 3, 160, 0, 0, 900, 0]], sprays: [[0.2, 3, ...logo]] };
+    return rowOf(fillTimeline(timeline(walker, extra), level({ spawns })).samples[0], 3).slice(1, 3);
+  };
+  assert.deepEqual(startOf([420, -20, 10]), [288, 0]);
+  assert.deepEqual(startOf([-40, 80, 10]), [96, 64]);
+});
+
 test('a hidden player starts on the spawn point that the order of the game gives it', () => {
   const extra = { rounds: [{ t: 0, kind: 'start', seconds: 100 }], fires: [[4, 3, 160, 0, 0, 900, 0]] };
   // Player 2 stands on the first T point at the restart, so player 3, the next entity of the side, has the
@@ -100,6 +111,15 @@ test('a hidden player starts on the spawn point that the order of the game gives
   // No T player stands on a point: nothing says which of three points player 3 has.
   const other = fillTimeline(timeline(walker, extra), level({ spawns: [spawns[0], spawns[2], spawns[3], { side: 'T', origin: [288, 32, 0] }] }));
   assert.equal(other.fill.spawns, 0);
+});
+
+test('a slot that does not play takes no spawn point: the next player has the point after the last one that plays', () => {
+  // Slot 3 has the T side and never plays (a referee); player 4 fires a shot, so it plays.
+  const extra = { rounds: [{ t: 0, kind: 'start', seconds: 100 }], sides: [[0, 1, 'CT'], [0, 2, 'T'], [0, 3, 'T'], [0, 4, 'T']], fires: [[4, 4, 160, 0, 0, 900, 0]] };
+  const spawns = [{ side: 'CT', origin: [0, 32, 0] }, { side: 'T', origin: [96, 32, 0] }, { side: 'T', origin: [288, 64, 0] }, { side: 'T', origin: [288, 0, 0] }];
+  const out = fillTimeline(timeline(walker, extra), level({ spawns }));
+  assert.deepEqual(rowOf(out.samples[0], 4).slice(1, 3), [288, 64]);
+  assert.equal(rowOf(out.samples[0], 3), null);
 });
 
 test('a slot with a side that never plays gets no estimate: a referee, a spectator on a side', () => {

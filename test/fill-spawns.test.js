@@ -59,6 +59,18 @@ test('one restart that the demo holds as two round windows moves no point', () =
   assert.deepEqual([2, 5, 7].map((e) => plan.get(c).get(e).x), [400, 500, 0]);
 });
 
+test('the same shown state at a later round means restarts with no window, once round the list', () => {
+  const [a, b] = [win(0), win(100)];
+  // Three CT players stand on points 0 to 2 at both rounds, 100 s apart: a restart between gave them 3 to 5.
+  const ct = [{ ...player(1, 'CT', [0, 2000]), own: true }, player(3, 'CT', [100, 2000]), player(4, 'CT', [200, 2000])];
+  const plan = spawnPlan(level(), [
+    { win: a, players: [...ct, player(2, 'T', [100, 0]), player(5, 'T', [200, 0])] },
+    { win: b, players: [...ct, player(2, 'T'), player(5, 'T')] },
+  ]);
+  // The two T players took 3 and 4 at the hidden restart, and 5 and 0 at this one.
+  assert.deepEqual([2, 5].map((e) => plan.get(b).get(e).x), [500, 0]);
+});
+
 test('the first known place of a hidden player picks the point that real players come from to it at that time', () => {
   // Real players from point 0 run up along x 0, from point 3 along x 300: 250 units a second, a point each 0.5 s.
   const run = (x) => Array.from({ length: 12 }, (_, k) => [x, k * 125, 0, 900]);

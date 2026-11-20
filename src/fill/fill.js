@@ -45,9 +45,11 @@ const GOOD_COST = 0.8;
 const CANDIDATES = 48;
 const WHOLE = 40;
 const TRIED = 3;
-// Seconds after a restart in which a seen player is still on its spawn point, and how sure a planned spawn
-// point must be (spawns.js) for a hidden player to start on it.
-const AT_SPAWN = 2.5;
+// Seconds after a restart in which a seen player is still on its spawn point (to the end of the freeze, and no
+// freeze is longer than FREEZE_MOST), and how sure a planned spawn point must be (spawns.js) for a hidden
+// player to start on it.
+const ON_POINT = 0.6;
+const FREEZE_MOST = 30;
 const SURE = 0.5;
 // A spray logo: units from the logo up to the middle of the heights that its player can have, and the cells of
 // the walk graph within which the floor of the player lies.
@@ -56,6 +58,8 @@ const SPRAY_UP = 10;
 const SPRAY_YIELDS = 1.2;
 // Seconds after the freeze in which a spray still counts as made on the spawn point.
 const FREEZE_SLACK = 0.5;
+// Units from a logo within which the spawn of its player lies (the game reaches 128 from the eye).
+const LOGO_REACH = 150;
 const SPRAY_CELLS = 4;
 // Units a second from which the steps of a player make a sound (a walk and a duck are silent).
 const STEPS = 160;
@@ -101,20 +105,24 @@ export function fillTimeline(timeline, level) {
   // A logo sprayed in the freeze is a clue of the spawn point only: its player stands on that point, and the
   // floor nearest to the logo is another place, which no way reaches while nobody moves.
   for (const [win, lives] of livesOf) {
-    for (const life of lives) life.known = life.known.filter((p) => !(p.kind === 'spray' && p.t <= win.goAt + FREEZE_SLACK));
+    for (const life of lives) {
+      const inFreeze = (p) => p.kind === 'spray' && p.t <= win.goAt + FREEZE_SLACK;
+      life.logo = life.known.find(inFreeze)?.logo ?? null;
+      life.known = life.known.filter((p) => !inFreeze(p));
+    }
   }
 
   for (const win of ctx.windows) {
     // The players with a known place first: their guides name the real rounds that the others of their team follow.
     const lives = livesOf.get(win);
     lives.sort((x, y) => (x.known.length ? 0 : 1) - (y.known.length ? 0 : 1));
-    for (const { entity, life, known } of lives) {
+    for (const { entity, life, known, logo } of lives) {
       const side = life.side;
       const add = (a, b, open, before = null, after = null, laters = null, short = false) => {
         // A player from its spawn starts on the point that the order of the game gives it, where that is sure.
         const planned = !a && life.fromSpawn ? spawns.get(win)?.get(entity) : null;
         const spawn = planned && planned.sure >= SURE ? planned : null;
-        const way = short ? straight(a, b) : wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, until: life.t1, spawn });
+        const way = short ? straight(a, b) : wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, until: life.t1, spawn, logo: spawn ? null : logo });
         if (way?.spawned) count.spawns++;
         if (!way) return;
         count.ways++;
@@ -510,7 +518,8 @@ function spawnsOf(ctx, livesOf) {
       if ((side !== 'T' && side !== 'CT') || !named(entity, t) || !ctx.plays(entity, t)) continue;
       const track = ctx.tracks.get(entity) ?? [];
       const at = track[lowerBound(track, t)];
-      const seen = at && at[0] <= win.t0 + AT_SPAWN ? [at[1], at[2]] : null;
+      // On its point until the freeze ends: for a moment at least, where the demo holds no freeze.
+      const seen = at && at[0] <= Math.max(win.t0 + ON_POINT, Math.min(win.goAt, win.t0 + FREEZE_MOST)) ? [at[1], at[2]] : null;
       const known = livesOf.get(win).find((life) => life.entity === entity)?.known ?? [];
       // A spray in the freeze is made on the spawn point; the first known place after it says where the player went.
       const inFreeze = (p) => p.kind === 'spray' && p.t <= win.goAt + FREEZE_SLACK;
@@ -577,7 +586,7 @@ function knownOf(ctx, entity, life) {
 }
 
 /** The estimated way of one span: {points: [{t, x, y, z, yaw}], kind, speed, straight, seen}. */
-function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, until, spawn = null }) {
+function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, until, spawn = null, logo = null }) {
   const { nav, hull, spawns, routes } = ctx.level;
   const t0 = a ? a.t : win.t0;
   const t1 = b ? b.t : until;
@@ -600,6 +609,9 @@ function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, unti
     const own = spawn ? nodeAt(nav, [spawn.x, spawn.y, spawn.z], 4) : -1;
     if (own >= 0) starts = [{ node: own, cost: 0 }];
     else spawn = null;
+    // With no sure point, a logo sprayed in the freeze still says near which spawns the player stands.
+    const reach = (s) => Math.hypot(nav.xyz[s.node * 3] - logo[0], nav.xyz[s.node * 3 + 1] - logo[1]) <= LOGO_REACH;
+    if (!spawn && logo && starts.some(reach)) starts = starts.filter(reach);
     if (!starts.length) return null;
   }
   const end = b ? floorOf(nav, b) : -1;
@@ -667,8 +679,12 @@ function wayOf(ctx, { entity, side, a, b, win, open, before, after, laters, unti
 
   const points = way.steps.map(({ t, node }) => ({ t, x: nav.xyz[node * 3], y: nav.xyz[node * 3 + 1], z: nav.xyz[node * 3 + 2], yaw: null }));
   if (a) Object.assign(points[0], { x: a.x, y: a.y, z: a.z, yaw: a.yaw ?? null });
-  // On its spawn point through the freeze: the point itself, not the floor of the walk graph beside it.
-  else if (spawn) for (const p of points) if (p === points[0] || p.t <= win.goAt + 0.01) Object.assign(p, { x: spawn.x, y: spawn.y, z: spawn.z });
+  // On its spawn point through the freeze: the place of the point itself (the walk graph has a floor each 32
+  // units) at the height of that floor (a point of the level lies some units over it), with the yaw of the point.
+  else if (spawn) {
+    const yaw = spawn.yaw === null ? null : (((spawn.yaw * 10) % 3600) + 3600) % 3600;
+    for (const p of points) if (p === points[0] || p.t <= win.goAt + 0.01) Object.assign(p, { x: spawn.x, y: spawn.y, yaw });
+  }
   if (b) Object.assign(points.at(-1), { x: b.x, y: b.y, z: b.z, yaw: b.yaw ?? null });
   smooth(points, hull);
   pace(points);

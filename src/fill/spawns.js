@@ -92,7 +92,6 @@ export function spawnPlan(level, rounds, breaks = new Set()) {
     return like;
   };
   const plan = [null, null];
-  const starts = [null, null];
   for (const s of [0, 1]) {
     const n = spots[s].length;
     if (!n) continue;
@@ -108,7 +107,7 @@ export function spawnPlan(level, rounds, breaks = new Set()) {
           if (at < 0) return;
           const start = (((at - rank) % n) + n) % n;
           votes.set(start, (votes.get(start) ?? 0) + 1);
-          for (let state = 0; state < n; state++) emit[state] *= state === start ? SEEN : (1 - SEEN) / (n - 1);
+          for (let state = 0; state < n; state++) emit[state] *= state === start ? SEEN : (1 - SEEN) / Math.max(1, n - 1);
           return;
         }
         const like = clue(s, p.first);
@@ -132,7 +131,6 @@ export function spawnPlan(level, rounds, breaks = new Set()) {
       return { count: mine.length, emit, known, mine };
     });
     plan[s] = rows;
-    starts[s] = rows.map((r) => r.known);
   }
   // The restarts between two round windows, counted on a side whose state the demo shows at both: 0 when the
   // demo holds one restart as two windows (the clock of a round can come twice), 1 for the next round, more
@@ -146,10 +144,12 @@ export function spawnPlan(level, rounds, breaks = new Set()) {
       const n = spots[s].length;
       if (a.known === null || b.known === null || !a.count || !b.count) continue;
       const step = (((b.known - a.known) % n) + n) % n;
-      if (step === 0) return 0;
+      // The same state a moment later is the same restart; later, the restarts between went once round the list.
+      if (step === 0 && rounds[i].win.t0 - rounds[i - 1].win.t0 < TWICE) return 0;
       for (let turn = 1; turn <= 4; turn++) {
         for (const skip of [0, 1]) if ((a.count + (turn - 1) * b.count + skip) % n === step) return turn;
       }
+      if (step === 0) return 0;
     }
     return null;
   });
@@ -162,9 +162,10 @@ export function spawnPlan(level, rounds, breaks = new Set()) {
     const move = (i) => {
       const m = new Float64Array(n * n);
       const base = rows[i - 1].count;
-      // Between two parts of a match nobody knows how many restarts there were, but each one gave every player
-      // of the side a new point: on a level with 20 points and 5 players only 4 states are left.
-      // Two windows within a few seconds with no shown side: more likely one restart seen twice than two.
+      // The restarts before this window, each with its chance. Between two parts of a match nobody knows the
+      // count, but each restart gave every player of the side a new point: on a level with 20 points and 5
+      // players only 4 states are left. With no shown side, two windows within a few seconds are more likely
+      // one restart seen twice than two.
       const twice = rounds[i].win.t0 - rounds[i - 1].win.t0 < TWICE ? 0.6 : 0.05;
       const extras = breaks.has(i) ? Array.from({ length: GAP }, (_, k) => [k + 1, 1 / GAP])
         : turns[i] === null ? [[0, twice], [1, (1 - twice) * 0.7], [2, (1 - twice) * 0.1], [3, (1 - twice) * 0.1], [4, (1 - twice) * 0.1]] : [[turns[i], 1]];

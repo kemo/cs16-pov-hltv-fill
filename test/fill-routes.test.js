@@ -60,6 +60,14 @@ test('a player between two known places follows a real player that went the same
   assert.equal(guidesFor(routes(), { side: 0, a: { x: 300, y: 0, z: 0, at: 30 }, b: { x: 700, y: 0, z: 0, at: 38 }, until: 38 }).length, 0);
 });
 
+test('a player with nothing known gets each whole round of a real player once, however many it asks for', () => {
+  // Three real T players start their rounds; a hidden one asks for 40 guides.
+  const whole = (y) => ({ side: 0, round: 1, k0: 0, points: Array.from({ length: 60 }, (_, k) => [k * 100, y, 0, 0]) });
+  const three = readRoutes(packRoutes(['a'], [[whole(0), whole(500), whole(1000)]]));
+  const guides = guidesFor(three, { side: 0, a: null, b: null, until: 20, limit: 40, seed: 7 });
+  assert.deepEqual(guides.map((g) => g.route).sort(), [0, 1, 2]);
+});
+
 test('a player with no later known place goes on as a real player did, for some seconds', () => {
   const used = new Set([0]);
   const [guide] = guidesFor(routes(), { side: 0, a: { x: 300, y: 0, z: 0, at: 3 }, b: null, until: 15, heading: [1, 0], used });

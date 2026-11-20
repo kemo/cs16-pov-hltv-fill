@@ -381,6 +381,12 @@ Tried and dropped, with the measure of each:
   enemy at 70 of them: too few to move the measure (p90 412 to 410).
 - A free spawn in place of the planned point where the way from that point is faster than a run: the median goes
   from 28 to 42. The plan is right more often than the walk graph is exact.
+- A guide that also fits the known places of the 9 s before the span and after it: no change (the fit of the ends
+  and the heading at them hold that already).
+- A second try on the floors that ways lead to and from, where the walk graph has no way between the floors of the
+  two known places (one of them is an island: the top of a box that only a jump reaches). It takes 60% of the long
+  straight lines away, but the error is a little worse (enemies' p90 386 to 390, teammates' 80 to 82) and more
+  steps are too fast: where the graph has no way, the straight line is the better estimate.
 - The weight of the spawn point in the score of a guide (0, 0.3 and 1 for each unit) and the chance from which a
   planned point counts (0.3, 0.5): the same within 1%.
 
